@@ -1,5 +1,6 @@
 [versions]
 
+koogAgents = "0.3.0"
 kotlin = "2.2.0"
 maven-publish = "0.34.0"
 kotlinx-coroutines = "1.10.2"
@@ -10,6 +11,7 @@ compose = "1.8.2"
 
 [libraries]
 
+koog-agents = { module = "ai.koog:koog-agents", version.ref = "koogAgents" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }

@@ -29,5 +29,4 @@ dependencyResolutionManagement {
     }
 }
 include(":acronymizer")
-include(":sample:composeApp")
-
+includeBuild("../SeforimLibrary")

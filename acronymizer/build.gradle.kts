@@ -18,6 +18,10 @@ kotlin {
             implementation(libs.ktor.client.serialization)
             implementation(libs.ktor.serialization.json)
             implementation(libs.ktor.client.logging)
+            implementation("io.github.kdroidfilter.seforimlibrary:core")
+            implementation("io.github.kdroidfilter.seforimlibrary:dao")
+            implementation(libs.koog.agents)
+
         }
 
         commonTest.dependencies {
