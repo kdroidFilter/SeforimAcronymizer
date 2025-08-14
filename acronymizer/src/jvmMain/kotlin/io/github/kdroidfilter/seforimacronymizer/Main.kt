@@ -61,8 +61,7 @@ fun main(): Unit = runBlocking {
                 "רמב״ם תוכן־החיבור"
             )
         ),
-        // Example 3 — synonym + direct abbreviation
-// Example 3 — synonym + direct abbreviation + without "הלכות"
+        // Example 3 — synonym + direct abbreviation + without "הלכות"
         AcronymList(
             term = "משנה תורה, הלכות שבועות", items = listOf(
                 "רמב\"ם הלכות שבועות",
@@ -71,7 +70,6 @@ fun main(): Unit = runBlocking {
                 "משנה\"ת הלכות שבועות",
                 "רמב\"ם הל' שבועות",
                 "משנ\"ת הל' שבועות",
-                // Added shortened forms
                 "רמב\"ם שבועות",
                 "רמב״ם שבועות",
                 "משנ\"ת שבועות",
@@ -99,7 +97,6 @@ fun main(): Unit = runBlocking {
                 "משנה\"ת הלכות קריאת שמע",
                 "רמב\"ם הל' קריאת שמע",
                 "משנ\"ת הל' קריאת שמע",
-                // Added shortened forms
                 "רמב\"ם קריאת שמע",
                 "רמב״ם קריאת שמע",
                 "משנ\"ת קריאת שמע",
@@ -154,7 +151,7 @@ fun main(): Unit = runBlocking {
             system(systemPrompt)
         },
         model = OpenAIModels.Chat.GPT4_1,
-        maxAgentIterations = 50
+        maxAgentIterations = 50,
     )
 
     // --- Agent instantiation ---
@@ -162,7 +159,8 @@ fun main(): Unit = runBlocking {
         promptExecutor = executor,
         toolRegistry = ToolRegistry.EMPTY,
         strategy = agentStrategy,
-        agentConfig = agentConfig
+        agentConfig = agentConfig,
+
     )
 
     // --- Execution ---
@@ -174,7 +172,8 @@ fun main(): Unit = runBlocking {
         "משנה תורה, הלכות קריאת שמע",
         "טור",
         "אבן העזר",
-        "משנה תורה, הלכות תפילין ומזוזה וספר תורה"
+        "משנה תורה, הלכות תפילין ומזוזה וספר תורה",
+        "מהר\"י וייל"
     )
 
     inputList.forEach {

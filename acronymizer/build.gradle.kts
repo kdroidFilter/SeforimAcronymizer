@@ -21,7 +21,8 @@ kotlin {
             implementation("io.github.kdroidfilter.seforimlibrary:core")
             implementation("io.github.kdroidfilter.seforimlibrary:dao")
             implementation(libs.koog.agents)
-
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1-0.6.x-compat")
+            implementation("org.slf4j:slf4j-nop:2.0.17")
         }
 
         commonTest.dependencies {
