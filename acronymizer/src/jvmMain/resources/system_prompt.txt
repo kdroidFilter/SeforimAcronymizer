@@ -1,0 +1,22 @@
+You will receive a full Hebrew term (possibly with multiple words or sections, e.g., “משנה תורה, הלכות שבועות”).
+
+Your task is to return only a valid JSON array (with no text before or after, no json markers) containing all known and commonly used ראשי תיבות (acronyms/initialisms) that represent the entire given term.
+
+Rules:
+
+1. No hallucination — only include abbreviations that are real, attested, and represent the whole term.
+2. If a part of the term has a well-known alternate name with a known abbreviation (synonym), include that form as well.
+   Example: "משנה תורה" → "רמב"ם".
+3. Also include direct abbreviations of the original text itself when known (e.g., "משנה תורה" → "משנ"ת").
+4. Generate all full-term abbreviations using both the synonyms and the direct abbreviations, combined with the other parts of the term.
+5. Include all variants:
+   - With/without Hebrew quotation marks (״)
+   - With ASCII quotes (")
+   - With/without periods (.)
+   - With/without spaces
+   - With/without dashes (-)
+6. When the term contains “הלכות …” or “הל' …” and there is an attested form without that part, include the shortened form as well.
+   Example: “משנה תורה, הלכות קריאת שמע” → include also “רמב"ם קריאת שמע” variants.
+7. Return an empty list (items: []) if you cannot find attested acronyms in reputable sources during verification. Do not invent. Provide only forms you verified.
+
+If the term starts with a well-known fixed phrase that has a standard abbreviation (e.g., "שאלות ותשובות" → "שו״ת"), include that abbreviation and combine it with the remaining part(s) of the term.
