@@ -7,7 +7,9 @@ import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeLLMRequest
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.dsl.prompt
+import ai.koog.prompt.executor.clients.google.GoogleModels
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
+import ai.koog.prompt.executor.llms.all.simpleGoogleAIExecutor
 import ai.koog.prompt.executor.llms.all.simpleOpenAIExecutor
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.json.JsonSchemaGenerator
@@ -25,7 +27,11 @@ import java.nio.charset.StandardCharsets
 fun main(): Unit = runBlocking {
     // --- Keys & LLM executor ---
     val openAIkey = System.getenv("OPEN_AI_KEY") ?: error("Environment variable OPEN_AI_KEY is not set")
-    val executor = simpleOpenAIExecutor(openAIkey)
+    val geminiKey = System.getenv("GEMINI_API_KEY") ?: error("Environment variable GEMINI_KEY is not set")
+
+    val openAiexecutor = simpleOpenAIExecutor(openAIkey)
+    
+    val geminiExecutor = simpleGoogleAIExecutor(geminiKey)
 
     // --- System prompt text (rules live here) ---
     val systemPrompt: String = object {}.javaClass.getResource("/system_prompt.txt")
@@ -150,7 +156,7 @@ fun main(): Unit = runBlocking {
                 requestLLMStructured(
                     structure = acronymStructure,
                     // Use a strong fixing model to enforce schema & banish extraneous text.
-                    fixingModel = OpenAIModels.Chat.GPT4_1,
+                    fixingModel = GoogleModels.Gemini1_5Pro,
                     retries = 5
                 )
             }
@@ -165,20 +171,36 @@ fun main(): Unit = runBlocking {
     }
 
     // --- Agent configuration: only the system prompt here; user content is the raw term ---
-    val agentConfig = AIAgentConfig(
+    val openAiAgentConfig = AIAgentConfig(
         prompt = prompt("acronymizer-prompt") { system(systemPrompt) },
-        model = OpenAIModels.Chat.GPT4_1,
+            model = OpenAIModels.Chat.GPT4_1,
+        maxAgentIterations = 500
+    )
+
+    val geminiAiAgentConfig = AIAgentConfig(
+        prompt = prompt("acronymizer-prompt") { system(systemPrompt) },
+        model = GoogleModels.Gemini2_5Flash,
         maxAgentIterations = 500
     )
 
     // --- Agent instantiation ---
-    fun createAgent() = AIAgent(
-        promptExecutor = executor,
+    fun createOpenAiAgent() = AIAgent(
+        promptExecutor = openAiexecutor,
         toolRegistry = ToolRegistry.EMPTY,
         strategy = agentStrategy,
-        agentConfig = agentConfig
+        agentConfig = openAiAgentConfig
     )
-    var agent = createAgent()
+    var openAiAgent = createOpenAiAgent()
+
+
+    fun createGoogleAgent() = AIAgent(
+        promptExecutor = geminiExecutor,
+        toolRegistry = ToolRegistry.EMPTY,
+        strategy = agentStrategy,
+        agentConfig = geminiAiAgentConfig
+    )
+
+    var geminiAgent = createGoogleAgent()
 
     // --- Input & Output DB paths ---
     val seforimDbPath = System.getenv("seforim_db") ?: error("Environment variable seforim_db is not set")
@@ -197,12 +219,31 @@ fun main(): Unit = runBlocking {
 
     books.forEachIndexed { idx, book ->
         val title = book.title
+        var existingEmptyRowId: Long? = null
         try {
+            // Skip only if already processed with non-empty terms; otherwise retry LLM and update existing row
+            if (acronymRepo.hasAcronymFor(title)) {
+                val latestTerms = acronymRepo.getLatestTermsFor(title)
+                val hasNonEmpty = latestTerms?.isNotBlank() == true
+                if (hasNonEmpty) {
+                    if ((idx + 1) % 50 == 0) {
+                        println("Skipping (already exists) ${idx + 1}/${books.size}... title='${title}'")
+                    }
+                    return@forEachIndexed
+                } else {
+                    // Capture the latest row id to update it after we get new terms from the LLM
+                    existingEmptyRowId = acronymRepo.getLatestRowIdFor(title)
+                    if ((idx + 1) % 50 == 0) {
+                        println("Retrying LLM (existing empty terms) ${idx + 1}/${books.size}... title='${title}'")
+                    }
+                }
+            }
+
             // Recreate the agent every 5 requests to reset context, waiting 5 seconds before to ensure a clean reset
             if (idx > 0 && idx % 5 == 0) {
                 println("Reinitializing agent after $idx items — waiting 5s...")
                 delay(5_000)
-                agent = createAgent()
+                geminiAgent = createGoogleAgent()
             }
 
             // 1) pace to respect TPM envelope
@@ -210,11 +251,17 @@ fun main(): Unit = runBlocking {
 
             // 2) auto-retry on 429 with backoff + jitter (and honor "try again in Xs" if present)
             val res = withOpenAiRateLimitRetries {
-                agent.run(title)
+                geminiAgent.run(title)
             }
 
-            // Store using repository (comma-delimited terms inside)
-            acronymRepo.insertAcronym(bookTitle = title, items = res.items)
+            // Store using repository: update existing empty row if present, otherwise insert a new row
+            val items = res.items
+            val rowIdToUpdate = existingEmptyRowId
+            if (rowIdToUpdate != null) {
+                acronymRepo.updateAcronym(rowId = rowIdToUpdate, items = items)
+            } else {
+                acronymRepo.insertAcronym(bookTitle = title, items = items)
+            }
 
             if ((idx + 1) % 50 == 0) {
                 println("Processed ${idx + 1}/${books.size}... last title='${title}' items=${res.items.size}")

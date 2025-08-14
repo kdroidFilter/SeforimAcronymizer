@@ -21,3 +21,15 @@ SELECT *
 FROM AcronymResults
 WHERE book_title = ?
 ORDER BY id;
+
+selectLatestIdByTitle:
+SELECT id
+FROM AcronymResults
+WHERE book_title = ?
+ORDER BY id DESC
+LIMIT 1;
+
+updateTermsById:
+UPDATE AcronymResults
+SET terms = ?, created_at = ?
+WHERE id = ?;
