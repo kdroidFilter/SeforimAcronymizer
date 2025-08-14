@@ -1,0 +1,23 @@
+-- Acronymizer result storage schema
+
+CREATE TABLE AcronymResults (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  book_title TEXT NOT NULL,
+  terms TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+insertAcronym:
+INSERT INTO AcronymResults(book_title, terms, created_at)
+VALUES (?, ?, ?);
+
+selectAll:
+SELECT *
+FROM AcronymResults
+ORDER BY id;
+
+selectByTitle:
+SELECT *
+FROM AcronymResults
+WHERE book_title = ?
+ORDER BY id;

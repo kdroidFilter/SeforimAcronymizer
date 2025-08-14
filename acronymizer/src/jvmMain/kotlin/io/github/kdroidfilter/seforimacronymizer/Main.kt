@@ -6,137 +6,156 @@ import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.nodeLLMRequest
 import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import ai.koog.prompt.executor.llms.all.simpleOpenAIExecutor
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.structure.json.JsonSchemaGenerator
 import ai.koog.prompt.structure.json.JsonStructuredData
-import io.lettuce.core.KillArgs.Builder.user
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import io.github.kdroidfilter.seforimacronymizer.data.repository.AcronymizerRepository
+import io.github.kdroidfilter.seforimacronymizer.model.AcronymList
+import io.github.kdroidfilter.seforimacronymizer.util.paceByTpm
+import io.github.kdroidfilter.seforimacronymizer.util.withOpenAiRateLimitRetries
+import io.github.kdroidfilter.seforimlibrary.dao.repository.SeforimRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import java.nio.charset.StandardCharsets
-import kotlin.system.exitProcess
-
-@Serializable
-@SerialName("AcronymList")
-@LLMDescription("Represents the full set of known and attested acronyms for a given term, including all valid variants.")
-data class AcronymList(
-    val term: String,
-    @property:LLMDescription("A list of all acronyms that represent the complete given term, each variant as a separate string.")
-    val items: List<String>
-)
 
 fun main(): Unit = runBlocking {
-
     // --- Keys & LLM executor ---
-    val openAIkey = System.getenv("OPEN_AI_KEY")
-        ?: error("Environment variable OPEN_AI_KEY is not set")
-
+    val openAIkey = System.getenv("OPEN_AI_KEY") ?: error("Environment variable OPEN_AI_KEY is not set")
     val executor = simpleOpenAIExecutor(openAIkey)
 
+    // --- System prompt text (rules live here) ---
     val systemPrompt: String = object {}.javaClass.getResource("/system_prompt.txt")
-        ?.readText(StandardCharsets.UTF_8) ?: ""
+        ?.readText(StandardCharsets.UTF_8)
+        ?: ""
 
-    // --- Examples (help the LLM follow the schema) ---
+
     val exampleStructures = listOf(
-        // Example 1 — direct known abbreviation only
+        // Example 1 — Classic: שולחן ערוך יורה דעה
+        // Entire work + section: "שו\"ע יו\"ד" etc. (Attested and standard.)
         AcronymList(
-            term = "שולחן ערוך יורה דעה", items = listOf(
+            term = "שולחן ערוך יורה דעה",
+            items = listOf(
                 "שו\"ע יו\"ד",
                 "שו״ע יו״ד",
+                "שו\"ע יו\"ד.",
+                "שו״ע יו״ד.",
                 "שו\"ע יוד",
                 "שו״ע יוד",
-                "שוע יו\"ד"
+                "שוע יו\"ד",   // no Hebrew quotes; informal but widely seen
+                "שוע יו\"ד."
             )
         ),
-        // Example 2 — synonym abbreviation only
+
+        // Example 2 — “משנה תורה, תוכן החיבור”
+        // Synonym form “רמב\"ם” + the rest of the phrase. “משנ\"ת” is less universal; we omit it here.
         AcronymList(
-            term = "משנה תורה, תוכן החיבור", items = listOf(
+            term = "משנה תורה, תוכן החיבור",
+            items = listOf(
                 "רמב\"ם תוכן החיבור",
                 "רמב״ם תוכן החיבור",
                 "רמב\"ם תוכן־החיבור",
                 "רמב״ם תוכן־החיבור"
             )
         ),
-        // Example 3 — synonym + direct abbreviation + without "הלכות"
+
+        // Example 3 — “משנה תורה, הלכות שבועות”
+        // Include “הל'” variants and the shortened form without “הלכות …” (attested pattern).
         AcronymList(
-            term = "משנה תורה, הלכות שבועות", items = listOf(
+            term = "משנה תורה, הלכות שבועות",
+            items = listOf(
                 "רמב\"ם הלכות שבועות",
                 "רמב״ם הלכות שבועות",
-                "משנ\"ת הלכות שבועות",
-                "משנה\"ת הלכות שבועות",
                 "רמב\"ם הל' שבועות",
-                "משנ\"ת הל' שבועות",
+                "רמב״ם הל' שבועות.",
+                // Shortened (without 'הלכות …') per rule 6:
                 "רמב\"ם שבועות",
-                "רמב״ם שבועות",
-                "משנ\"ת שבועות",
-                "משנה\"ת שבועות"
+                "רמב״ם שבועות"
             )
         ),
 
-        // Example 4 — no known abbreviation (empty result)
+        // Example 4 — No known acronym for the entire phrase
         AcronymList(term = "הסבר כללי על הנושא", items = emptyList()),
-        // Example 5 — multiple parts, each with abbreviation
+
+        // Example 5 — “אורח חיים סימן”
+        // Standard 'או\"ח' + 'סי\"' forms.
         AcronymList(
-            term = "אורח חיים סימן", items = listOf(
+            term = "אורח חיים סימן",
+            items = listOf(
                 "או\"ח סי'",
                 "או״ח סי׳",
-                "אוח סי'",
-                "אוח סי׳"
+                "או\"ח סי\"",
+                "או״ח סי״"
             )
         ),
 
+        // Example 6 — “משנה תורה, הלכות קריאת שמע”
         AcronymList(
-            term = "משנה תורה, הלכות קריאת שמע", items = listOf(
+            term = "משנה תורה, הלכות קריאת שמע",
+            items = listOf(
                 "רמב\"ם הלכות קריאת שמע",
-                "רמב״ם הלכות קריאת שמע",
-                "משנ\"ת הלכות קריאת שמע",
-                "משנה\"ת הלכות קריאת שמע",
+                "‌رמב״ם הלכות קריאת שמע",
                 "רמב\"ם הל' קריאת שמע",
-                "משנ\"ת הל' קריאת שמע",
+                // Shortened (without 'הלכות …'):
                 "רמב\"ם קריאת שמע",
-                "רמב״ם קריאת שמע",
-                "משנ\"ת קריאת שמע",
-                "משנה\"ת קריאת שמע"
+                "רמב״ם קריאת שמע"
             )
         ),
 
+        // Example 7 — “שאלות ותשובות מן השמים”
+        // Fixed phrase שו\"ת; combine with tail. Also include “שות” which is frequently used.
         AcronymList(
-            term = "שאלות ותשובות מן השמים", items = listOf(
+            term = "שאלות ותשובות מן השמים",
+            items = listOf(
                 "שו\"ת מן השמים",
                 "שו״ת מן השמים",
-                "שות מן השמים"
+                "שו\"ת מן־השמים",
+                "שו״ת מן־השמים",
+                "שות מן השמים",
+                "שות מן־השמים"
             )
         ),
 
+        // Example 8 — “אבן העזר סימן”
+        // Standard 'אבהע\"ז' is common; also 'אה\"ע' is seen; include Sif (סי') marker.
+        AcronymList(
+            term = "אבן העזר סימן",
+            items = listOf(
+                "אבהע\"ז סי'",
+                "אבהע״ז סי׳",
+                "אה\"ע סי'",
+                "אה״ע סי׳"
+            )
         )
+    )
 
-    // --- JSON Schema generation for AcronymList ---
+    // --- JSON Schema for AcronymList ---
     val acronymStructure = JsonStructuredData.createJsonStructure<AcronymList>(
         schemaFormat = JsonSchemaGenerator.SchemaFormat.JsonSchema,
         schemaType = JsonStructuredData.JsonSchemaType.FULL,
         examples = exampleStructures
     )
 
-    // --- Agent strategy: a node that requests a structured response ---
+    // --- Agent strategy: single node that requests a structured response ---
     val agentStrategy = strategy("acronymizer-structured") {
         val setup by nodeLLMRequest(allowToolCalls = false)
 
-        val getStructured by node<Message.Response, AcronymList> { incoming ->
-            val userText = incoming.content
+        val getStructured by node<Message.Response, AcronymList> {
 
+            // The structured call; if the model is unsure, it must return items=[]
             val res = llm.writeSession {
-                user(userText)
                 requestLLMStructured(
                     structure = acronymStructure,
-                    fixingModel = OpenAIModels.Reasoning.O3Mini,
+                    // Use a strong fixing model to enforce schema & banish extraneous text.
+                    fixingModel = OpenAIModels.Chat.GPT4_1,
                     retries = 5
                 )
             }
 
+            // Enforce that we return only the structure part on success:
             res.getOrThrow().structure
         }
 
@@ -145,40 +164,66 @@ fun main(): Unit = runBlocking {
         edge(getStructured forwardTo nodeFinish)
     }
 
-    // --- Agent configuration ---
+    // --- Agent configuration: only the system prompt here; user content is the raw term ---
     val agentConfig = AIAgentConfig(
-        prompt = prompt("acronymizer-prompt") {
-            system(systemPrompt)
-        },
+        prompt = prompt("acronymizer-prompt") { system(systemPrompt) },
         model = OpenAIModels.Chat.GPT4_1,
-        maxAgentIterations = 50,
+        maxAgentIterations = 500
     )
 
     // --- Agent instantiation ---
-    val agent = AIAgent(
+    fun createAgent() = AIAgent(
         promptExecutor = executor,
         toolRegistry = ToolRegistry.EMPTY,
         strategy = agentStrategy,
-        agentConfig = agentConfig,
-
+        agentConfig = agentConfig
     )
+    var agent = createAgent()
 
-    // --- Execution ---
-    val inputList = listOf(
-        "בית יוסף",
-        "שולחן ערוך הרב",
-        "תרומת הדשן",
-        "שאלות ותשובות מן השמים",
-        "משנה תורה, הלכות קריאת שמע",
-        "טור",
-        "אבן העזר",
-        "משנה תורה, הלכות תפילין ומזוזה וספר תורה",
-        "מהר\"י וייל"
-    )
+    // --- Input & Output DB paths ---
+    val seforimDbPath = System.getenv("seforim_db") ?: error("Environment variable seforim_db is not set")
+    val outputDbPath = System.getenv("acronymizer_db") ?: "acronymizer.db"
 
-    inputList.forEach {
-        println(agent.run(it))
+    // --- Open Seforim database (read) ---
+    val seforimDriver = JdbcSqliteDriver(url = "jdbc:sqlite:$seforimDbPath")
+    val seforimRepo = SeforimRepository(databasePath = seforimDbPath, driver = seforimDriver)
+
+        // --- Open/Create Acronymizer output database (write) via repository ---
+    val acronymRepo = AcronymizerRepository(outputDbPath)
+
+    // --- Iterate books and persist results ---
+    val books = seforimRepo.getAllBooks()
+    println("Found ${books.size} books. Processing...")
+
+    books.forEachIndexed { idx, book ->
+        val title = book.title
+        try {
+            // Recreate the agent every 5 requests to reset context, waiting 5 seconds before to ensure a clean reset
+            if (idx > 0 && idx % 5 == 0) {
+                println("Reinitializing agent after $idx items — waiting 5s...")
+                delay(5_000)
+                agent = createAgent()
+            }
+
+            // 1) pace to respect TPM envelope
+            paceByTpm()
+
+            // 2) auto-retry on 429 with backoff + jitter (and honor "try again in Xs" if present)
+            val res = withOpenAiRateLimitRetries {
+                agent.run(title)
+            }
+
+            // Store using repository (comma-delimited terms inside)
+            acronymRepo.insertAcronym(bookTitle = title, items = res.items)
+
+            if ((idx + 1) % 50 == 0) {
+                println("Processed ${idx + 1}/${books.size}... last title='${title}' items=${res.items.size}")
+            }
+        } catch (t: Throwable) {
+            // If it's not a rate limit issue (which we already retry above), log and continue
+            System.err.println("Failed processing title='${title}': ${t.message}")
+        }
     }
 
-    exitProcess(0)
+    println("Done. Results stored in $outputDbPath")
 }

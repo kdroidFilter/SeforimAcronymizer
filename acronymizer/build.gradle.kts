@@ -72,12 +72,16 @@ mavenPublishing {
     if (project.hasProperty("signing.keyId")) signAllPublications()
 }
 
+
 sqldelight {
     databases {
-        create("MyDatabase") {
+        create("SeforimAcronymizerDb") {
             // Database configuration here.
             // https://cashapp.github.io/sqldelight
             packageName.set("io.github.kdroidfilter.seforim.acronymizer.db")
+            dialect("app.cash.sqldelight:sqlite-3-24-dialect:${libs.versions.sqlDelight.get()}")
         }
     }
 }
+
+
