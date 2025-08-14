@@ -239,11 +239,15 @@ fun main(): Unit = runBlocking {
                 }
             }
 
-            // Recreate the agent every 5 requests to reset context, waiting 5 seconds before to ensure a clean reset
+            // Recreate the agent every 5 requests to reset context (no extra delay per requirement)
             if (idx > 0 && idx % 5 == 0) {
-                println("Reinitializing agent after $idx items — waiting 5s...")
-                delay(5_000)
+                println("Reinitializing agent after $idx items...")
                 geminiAgent = createGoogleAgent()
+            }
+
+            // Ensure 1s delay between each request
+            if (idx > 0) {
+                delay(1_000)
             }
 
             // 1) pace to respect TPM envelope

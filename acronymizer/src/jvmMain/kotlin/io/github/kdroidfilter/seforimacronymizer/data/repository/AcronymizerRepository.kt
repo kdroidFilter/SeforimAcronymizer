@@ -24,6 +24,7 @@ class AcronymizerRepository(
         if (!dbFile.exists()) {
             dbFile.parentFile?.mkdirs()
             SeforimAcronymizerDb.Schema.create(driver)
+            println("[DB][INIT] Created new acronymizer DB at '${dbFile.path}'")
         }
     }
 
@@ -55,6 +56,8 @@ class AcronymizerRepository(
             terms = termsCsv,
             created_at = createdAt.toString()
         )
+        val preview = items.take(3).joinToString(" | ")
+        println("[DB][INSERT] title='${bookTitle}' items=${items.size} preview=[${preview}] at ${createdAt}")
     }
 
     /** Update an existing acronym row by id. */
@@ -65,5 +68,7 @@ class AcronymizerRepository(
             created_at = createdAt.toString(),
             id = rowId
         )
+        val preview = items.take(3).joinToString(" | ")
+        println("[DB][UPDATE] id=${rowId} items=${items.size} preview=[${preview}] at ${createdAt}")
     }
 }
