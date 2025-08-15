@@ -1,8 +1,16 @@
 -- Acronymizer result storage schema
 
-CREATE TABLE AcronymResults (
+CREATE TABLE IF NOT EXISTS AcronymResults (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   book_title TEXT NOT NULL,
+  terms TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- Results for tocText processing
+CREATE TABLE IF NOT EXISTS TocAcronymResults (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  toc_text TEXT NOT NULL,
   terms TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
@@ -31,5 +39,28 @@ LIMIT 1;
 
 updateTermsById:
 UPDATE AcronymResults
+SET terms = ?, created_at = ?
+WHERE id = ?;
+
+-- Toc queries
+insertTocAcronym:
+INSERT INTO TocAcronymResults(toc_text, terms, created_at)
+VALUES (?, ?, ?);
+
+selectTocByText:
+SELECT *
+FROM TocAcronymResults
+WHERE toc_text = ?
+ORDER BY id;
+
+selectLatestIdByTocText:
+SELECT id
+FROM TocAcronymResults
+WHERE toc_text = ?
+ORDER BY id DESC
+LIMIT 1;
+
+updateTocTermsById:
+UPDATE TocAcronymResults
 SET terms = ?, created_at = ?
 WHERE id = ?;
