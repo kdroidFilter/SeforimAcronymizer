@@ -17,6 +17,7 @@ import ai.koog.prompt.structure.json.JsonStructuredData
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.kdroidfilter.seforimacronymizer.data.repository.AcronymizerRepository
 import io.github.kdroidfilter.seforimacronymizer.model.AcronymList
+import io.github.kdroidfilter.seforimacronymizer.model.AcronymBatch
 import io.github.kdroidfilter.seforimacronymizer.util.paceByTpm
 import io.github.kdroidfilter.seforimacronymizer.util.withOpenAiRateLimitRetries
 import io.github.kdroidfilter.seforimlibrary.dao.repository.SeforimRepository
@@ -25,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 import java.nio.charset.StandardCharsets
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.min
 
 private val tsFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
 private fun now(): String = LocalDateTime.now().format(tsFormatter)
@@ -54,6 +56,8 @@ fun main(): Unit = runBlocking {
         ?: ""
     log("System prompt loaded: ${systemPrompt.length} chars")
 
+
+    // Using top-level model.AcronymBatch (Serializable) for uniformization across blocks
 
     val exampleStructures = listOf(
         // Example 1 — Classic: שולחן ערוך יורה דעה
@@ -162,6 +166,19 @@ fun main(): Unit = runBlocking {
     )
     log("Acronym JSON schema prepared with ${exampleStructures.size} example structures")
 
+    // JSON Schema for AcronymBatch (for uniformization step)
+    val acronymBatchStructure = JsonStructuredData.createJsonStructure<AcronymBatch>(
+        schemaFormat = JsonSchemaGenerator.SchemaFormat.JsonSchema,
+        schemaType = JsonStructuredData.JsonSchemaType.FULL,
+        examples = listOf(
+            AcronymBatch(entries = listOf(
+                AcronymList(term = "אבן העזר סימן", items = listOf("אבהע\"ז סי'", "אה\"ע סי'")),
+                AcronymList(term = "אבן עזרא", items = listOf("אבן עזרא", "א\"ע"))
+            ))
+        )
+    )
+    log("AcronymBatch JSON schema prepared")
+
     // --- Agent strategy: single node that requests a structured response ---
     val agentStrategy = strategy("acronymizer-structured") {
         val setup by nodeLLMRequest(allowToolCalls = false)
@@ -203,6 +220,55 @@ fun main(): Unit = runBlocking {
     )
     log("Google Gemini agent config prepared (model=Gemini2_5Flash, maxIterations=500)")
 
+    // Uniformizer agent: batch-level homogenization
+    val uniformizerSystemPrompt = """
+You are a helpful assistant that homogenizes acronym lists across a block of titles.
+Task:
+- Input (user) will provide up to 50 entries. Each entry has a title and an existing list of terms (acronyms and variants).
+- Within the block only, if two or more titles refer to very similar or equivalent names (e.g., אבן עזרא and א"ע), uniformize their terms consistently: 
+  - Merge and deduplicate meaningful variants so that each affected entry contains the unified, consistent set of terms that covers both ways of writing.
+  - Preserve canonical Hebrew quoting patterns (straight and curly quotes), but keep the set concise and non-redundant.
+- If a title has no close match in the block, leave its terms unchanged.
+- Do not invent unrelated terms. Prefer high-precision matches.
+- Return exactly the same number of entries, in the same order, where each entry is { term: <original title>, items: [updated terms...] }.
+Constraints:
+- Output must strictly follow the provided JSON schema for AcronymBatch.
+- Do not include any extra commentary.
+""".trimIndent()
+
+    val uniformizerAgentStrategy = strategy("acronymizer-uniformizer-structured") {
+        val setup by nodeLLMRequest(allowToolCalls = false)
+        val getStructured by node<Message.Response, AcronymBatch> {
+            val res = llm.writeSession {
+                requestLLMStructured(
+                    structure = acronymBatchStructure,
+                    fixingModel = GoogleModels.Gemini1_5Pro,
+                    retries = 5
+                )
+            }
+            res.getOrThrow().structure
+        }
+        edge(nodeStart forwardTo setup)
+        edge(setup forwardTo getStructured)
+        edge(getStructured forwardTo nodeFinish)
+    }
+
+    val uniformizerAgentConfig = AIAgentConfig(
+        prompt = prompt("acronymizer-uniformizer-prompt") { system(uniformizerSystemPrompt) },
+        model = GoogleModels.Gemini1_5Pro,
+        maxAgentIterations = 200
+    )
+
+    fun createUniformizerAgent() = AIAgent(
+        promptExecutor = geminiExecutor,
+        toolRegistry = ToolRegistry.EMPTY,
+        strategy = uniformizerAgentStrategy,
+        agentConfig = uniformizerAgentConfig
+    )
+
+    var uniformizerAgent = createUniformizerAgent()
+    log("Uniformizer agent instantiated")
+
     // --- Agent instantiation ---
     fun createOpenAiAgent() = AIAgent(
         promptExecutor = openAiexecutor,
@@ -237,11 +303,82 @@ fun main(): Unit = runBlocking {
     val acronymRepo = AcronymizerRepository(outputDbPath)
     log("Acronymizer repository opened (output DB)")
 
+    // Helper to format batch input for the uniformizer agent
+    fun formatBatchInput(entries: List<AcronymList>): String {
+        val sb = StringBuilder()
+        sb.appendLine("Below is a block of entries. Each entry has a title and its current terms. Return a homogenized AcronymBatch as per the system rules.")
+        entries.forEachIndexed { i, e ->
+            val itemsJoined = e.items.joinToString(" | ")
+            sb.appendLine("${i + 1}. title: ${e.term}")
+            sb.appendLine("   items: ${itemsJoined}")
+        }
+        return sb.toString()
+    }
+
     // --- Iterate books and persist results ---
     val books = seforimRepo.getAllBooks()
     log("Found ${books.size} books. Processing...")
 
-    books.forEachIndexed { idx, book ->
+    // Accumulate per-50 batch of results for uniformization
+    val currentBatch = mutableListOf<AcronymList>()
+
+    suspend fun runUniformizationBatchIfNeeded(force: Boolean = false) {
+        if (currentBatch.isEmpty()) return
+        if (!force && currentBatch.size < 50) return
+
+        val batchSize = currentBatch.size
+        log("Starting uniformization for batch of ${batchSize} entries")
+        try {
+            // Optional: reinitialize the uniformizer agent every batch to keep context fresh
+            uniformizerAgent = createUniformizerAgent()
+
+            // Respect pacing & retries as well
+            paceByTpm()
+            val inputText = formatBatchInput(currentBatch)
+            val t0 = System.nanoTime()
+            val uniformized = withOpenAiRateLimitRetries {
+                uniformizerAgent.run(inputText)
+            }
+            val dtMs = (System.nanoTime() - t0) / 1_000_000
+            log("Uniformization LLM run completed in ${dtMs} ms; applying updates if any")
+
+            val returned = uniformized.entries
+            if (returned.size != batchSize) {
+                warn("Uniformizer returned ${returned.size} entries, expected ${batchSize}. Skipping batch update to be safe.")
+            } else {
+                // For each entry, compare items and update DB if changed
+                returned.forEachIndexed { i, entry ->
+                    val original = currentBatch[i]
+                    if (entry.term != original.term) {
+                        warn("Uniformizer changed title at index ${i} from '${original.term}' to '${entry.term}'. Keeping original title and proceeding.")
+                    }
+                    val newItems = entry.items
+                    val oldItems = original.items
+                    // Compare as sets to ignore ordering differences
+                    val changed = newItems.toSet() != oldItems.toSet()
+                    if (changed) {
+                        val titleToUpdate = original.term
+                        val rowId = acronymRepo.getLatestRowIdFor(titleToUpdate)
+                        if (rowId != null) {
+                            acronymRepo.updateAcronym(rowId = rowId, items = newItems)
+                            log("[BATCH][UPDATE] title='${titleToUpdate}' items=${newItems.size} (was ${oldItems.size})")
+                        } else {
+                            // Fallback: insert a new row if none was found
+                            acronymRepo.insertAcronym(bookTitle = titleToUpdate, items = newItems)
+                            log("[BATCH][INSERT-FALLBACK] title='${titleToUpdate}' items=${newItems.size}")
+                        }
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            logError("Failed batch uniformization", t)
+        } finally {
+            currentBatch.clear()
+        }
+    }
+
+    for (idx in books.indices) {
+        val book = books[idx]
         val title = book.title
         log("Processing ${idx + 1}/${books.size}: title='$title'")
         var existingEmptyRowId: Long? = null
@@ -253,7 +390,7 @@ fun main(): Unit = runBlocking {
                 val hasNonEmpty = latestTerms?.isNotBlank() == true
                 if (hasNonEmpty) {
                     log("Skipping (non-empty terms already present) idx=${idx + 1}/${books.size} title='$title'")
-                    return@forEachIndexed
+                    continue
                 } else {
                     // Capture the latest row id to update it after we get new terms from the LLM
                     existingEmptyRowId = acronymRepo.getLatestRowIdFor(title)
@@ -300,14 +437,22 @@ fun main(): Unit = runBlocking {
                 log("Inserted new record with ${items.size} items for title='$title'")
             }
 
+            // Add to current batch for later uniformization
+            currentBatch.add(AcronymList(term = title, items = items))
+
             if ((idx + 1) % 50 == 0) {
                 log("Processed ${idx + 1}/${books.size}... last title='$title' items=${res.items.size}")
+                // Run batch uniformization every 50 entries
+                runUniformizationBatchIfNeeded(force = true)
             }
         } catch (t: Throwable) {
             // If it's not a rate limit issue (which we already retry above), log and continue
             logError("Failed processing title='$title'", t)
         }
     }
+
+    // Flush any remaining entries smaller than 50 at the end
+    runUniformizationBatchIfNeeded(force = true)
 
     log("Done. Results stored in $outputDbPath")
 }
