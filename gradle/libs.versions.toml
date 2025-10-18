@@ -1,13 +1,13 @@
 [versions]
 
 koogAgents = "0.3.0"
-kotlin = "2.2.0"
+kotlin = "2.2.20"
 maven-publish = "0.34.0"
 kotlinx-coroutines = "1.10.2"
 kotlinx-serialization = "1.9.0"
-ktor = "3.2.3"
+ktor = "3.3.1"
 sqlDelight = "2.1.0"
-compose = "1.8.2"
+compose = "1.10.0-alpha02"
 
 [libraries]
 
