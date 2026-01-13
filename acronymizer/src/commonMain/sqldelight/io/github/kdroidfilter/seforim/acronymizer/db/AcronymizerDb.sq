@@ -1,11 +1,44 @@
--- Acronymizer result storage schema
+-- Acronymizer relational database schema
 
-CREATE TABLE IF NOT EXISTS AcronymResults (
-  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  book_title TEXT NOT NULL,
-  terms TEXT NOT NULL,
-  created_at TEXT NOT NULL
+-- Books table
+CREATE TABLE IF NOT EXISTS Books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL UNIQUE
 );
+
+-- Acronyms table
+CREATE TABLE IF NOT EXISTS Acronyms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    acronym TEXT NOT NULL UNIQUE
+);
+
+-- Junction table for many-to-many relationship
+CREATE TABLE IF NOT EXISTS BookAcronyms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    acronym_id INTEGER NOT NULL,
+    FOREIGN KEY (book_id) REFERENCES Books(id) ON DELETE CASCADE,
+    FOREIGN KEY (acronym_id) REFERENCES Acronyms(id) ON DELETE CASCADE,
+    UNIQUE(book_id, acronym_id)
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_books_title ON Books(title);
+CREATE INDEX IF NOT EXISTS idx_acronyms_acronym ON Acronyms(acronym);
+CREATE INDEX IF NOT EXISTS idx_book_acronyms_book_id ON BookAcronyms(book_id);
+CREATE INDEX IF NOT EXISTS idx_book_acronyms_acronym_id ON BookAcronyms(acronym_id);
+
+-- Compatibility view
+CREATE VIEW IF NOT EXISTS AcronymResults AS
+SELECT
+    b.id,
+    b.title AS book_title,
+    COALESCE(GROUP_CONCAT(a.acronym, ','), '') AS terms
+FROM Books b
+LEFT JOIN BookAcronyms ba ON b.id = ba.book_id
+LEFT JOIN Acronyms a ON ba.acronym_id = a.id
+GROUP BY b.id, b.title
+ORDER BY b.id;
 
 -- Results for tocText processing
 CREATE TABLE IF NOT EXISTS TocAcronymResults (
@@ -15,9 +48,69 @@ CREATE TABLE IF NOT EXISTS TocAcronymResults (
   created_at TEXT NOT NULL
 );
 
+-- ==========================================
+-- Books operations
+-- ==========================================
+
+insertBook:
+INSERT OR IGNORE INTO Books(title)
+VALUES (?);
+
+getBookByTitle:
+SELECT id FROM Books WHERE title = ?;
+
+getAllBooks:
+SELECT * FROM Books ORDER BY id;
+
+getBookById:
+SELECT * FROM Books WHERE id = ?;
+
+-- ==========================================
+-- Acronyms operations
+-- ==========================================
+
 insertAcronym:
-INSERT INTO AcronymResults(book_title, terms, created_at)
-VALUES (?, ?, ?);
+INSERT OR IGNORE INTO Acronyms(acronym)
+VALUES (?);
+
+getAcronymByText:
+SELECT id FROM Acronyms WHERE acronym = ?;
+
+getAllAcronyms:
+SELECT * FROM Acronyms ORDER BY id;
+
+getAcronymById:
+SELECT * FROM Acronyms WHERE id = ?;
+
+-- ==========================================
+-- BookAcronyms junction operations
+-- ==========================================
+
+insertBookAcronym:
+INSERT OR IGNORE INTO BookAcronyms(book_id, acronym_id)
+VALUES (?, ?);
+
+deleteBookAcronymsByBookId:
+DELETE FROM BookAcronyms WHERE book_id = ?;
+
+deleteBookAcronymsByAcronymId:
+DELETE FROM BookAcronyms WHERE acronym_id = ?;
+
+getAcronymsByBookId:
+SELECT a.id, a.acronym
+FROM Acronyms a
+JOIN BookAcronyms ba ON a.id = ba.acronym_id
+WHERE ba.book_id = ?;
+
+getBooksByAcronymId:
+SELECT b.id, b.title
+FROM Books b
+JOIN BookAcronyms ba ON b.id = ba.book_id
+WHERE ba.acronym_id = ?;
+
+-- ==========================================
+-- View queries (backward compatibility)
+-- ==========================================
 
 selectAll:
 SELECT *
@@ -32,17 +125,21 @@ ORDER BY id;
 
 selectLatestIdByTitle:
 SELECT id
-FROM AcronymResults
-WHERE book_title = ?
+FROM Books
+WHERE title = ?
 ORDER BY id DESC
 LIMIT 1;
 
-updateTermsById:
-UPDATE AcronymResults
-SET terms = ?, created_at = ?
-WHERE id = ?;
+selectEmptyEntries:
+SELECT id, book_title
+FROM AcronymResults
+WHERE length(terms) = 0 OR terms = ''
+ORDER BY id;
 
+-- ==========================================
 -- Toc queries
+-- ==========================================
+
 insertTocAcronym:
 INSERT INTO TocAcronymResults(toc_text, terms, created_at)
 VALUES (?, ?, ?);

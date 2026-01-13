@@ -54,29 +54,58 @@ class AcronymizerRepository(
 
     /**
      * Insert acronym items for a given book title.
-     * Items are stored as a comma-separated list, matching existing schema usage.
+     * Uses the relational structure: Books, Acronyms, and BookAcronyms junction table.
      */
-    fun insertAcronym(bookTitle: String, items: List<String>, createdAt: Instant = Instant.now()) {
-        val termsCsv = items.joinToString(",")
-        db.acronymizerDbQueries.insertAcronym(
-            book_title = bookTitle,
-            terms = termsCsv,
-            created_at = createdAt.toString()
-        )
+    fun insertAcronym(bookTitle: String, items: List<String>, @Suppress("UNUSED_PARAMETER") createdAt: Instant = Instant.now()) {
+        // 1. Insert book (or ignore if exists)
+        db.acronymizerDbQueries.insertBook(title = bookTitle)
+
+        // 2. Get book ID
+        val bookId = db.acronymizerDbQueries.getBookByTitle(bookTitle).executeAsOneOrNull()
+            ?: error("Book not found after insert: $bookTitle")
+
+        // 3. For each acronym item
+        for (item in items) {
+            if (item.isBlank()) continue
+
+            // Insert acronym (or ignore if exists)
+            db.acronymizerDbQueries.insertAcronym(acronym = item)
+
+            // Get acronym ID
+            val acronymId = db.acronymizerDbQueries.getAcronymByText(item).executeAsOneOrNull()
+                ?: continue
+
+            // Create link in junction table
+            db.acronymizerDbQueries.insertBookAcronym(book_id = bookId, acronym_id = acronymId)
+        }
+
         val preview = items.take(3).joinToString(" | ")
-        println("[DB][INSERT] title='${bookTitle}' items=${items.size} preview=[${preview}] at ${createdAt}")
+        println("[DB][INSERT] title='${bookTitle}' items=${items.size} preview=[${preview}]")
     }
 
-    /** Update an existing acronym row by id. */
-    fun updateAcronym(rowId: Long, items: List<String>, createdAt: Instant = Instant.now()) {
-        val termsCsv = items.joinToString(",")
-        db.acronymizerDbQueries.updateTermsById(
-            terms = termsCsv,
-            created_at = createdAt.toString(),
-            id = rowId
-        )
+    /** Update an existing acronym entry by replacing all acronyms for a book. */
+    fun updateAcronym(rowId: Long, items: List<String>, @Suppress("UNUSED_PARAMETER") createdAt: Instant = Instant.now()) {
+        // Get the book by id
+        val book = db.acronymizerDbQueries.getBookById(rowId).executeAsOneOrNull()
+            ?: error("Book not found with id: $rowId")
+
+        // Delete existing links
+        db.acronymizerDbQueries.deleteBookAcronymsByBookId(rowId)
+
+        // Insert new acronyms and links (same logic as insertAcronym)
+        for (item in items) {
+            if (item.isBlank()) continue
+
+            db.acronymizerDbQueries.insertAcronym(acronym = item)
+
+            val acronymId = db.acronymizerDbQueries.getAcronymByText(item).executeAsOneOrNull()
+                ?: continue
+
+            db.acronymizerDbQueries.insertBookAcronym(book_id = rowId, acronym_id = acronymId)
+        }
+
         val preview = items.take(3).joinToString(" | ")
-        println("[DB][UPDATE] id=${rowId} items=${items.size} preview=[${preview}] at ${createdAt}")
+        println("[DB][UPDATE] id=${rowId} title='${book.title}' items=${items.size} preview=[${preview}]")
     }
 
     // ---------------- tocText APIs ----------------
