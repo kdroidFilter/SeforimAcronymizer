@@ -18,11 +18,11 @@ kotlin {
             implementation(libs.ktor.client.serialization)
             implementation(libs.ktor.serialization.json)
             implementation(libs.ktor.client.logging)
-            implementation("io.github.kdroidfilter.seforimlibrary:core")
-            implementation("io.github.kdroidfilter.seforimlibrary:dao")
+            implementation(libs.seforimlibrary.core)
+            implementation(libs.seforimlibrary.dao)
             implementation(libs.koog.agents)
-            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1-0.6.x-compat")
-            implementation("org.slf4j:slf4j-nop:2.0.17")
+            implementation(libs.kotlinx.datetime.compat)
+            implementation(libs.slf4j.nop)
         }
 
         commonTest.dependencies {

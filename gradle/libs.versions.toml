@@ -2,6 +2,8 @@
 
 koogAgents = "0.3.0"
 kotlin = "2.2.20"
+kotlinx-datetime-compat = "0.7.1-0.6.x-compat"
+slf4j = "2.0.17"
 maven-publish = "0.34.0"
 kotlinx-coroutines = "1.10.2"
 kotlinx-serialization = "1.9.0"
@@ -31,6 +33,10 @@ sqlDelight-driver-sqlite = { module = "app.cash.sqldelight:sqlite-driver", versi
 sqlDelight-driver-android = { module = "app.cash.sqldelight:android-driver", version.ref = "sqlDelight" }
 sqlDelight-driver-native = { module = "app.cash.sqldelight:native-driver", version.ref = "sqlDelight" }
 sqlDelight-driver-js = { module = "app.cash.sqldelight:web-worker-driver", version.ref = "sqlDelight" }
+kotlinx-datetime-compat = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime-compat" }
+slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
+seforimlibrary-core = { module = "io.github.kdroidfilter.seforimlibrary:core" }
+seforimlibrary-dao = { module = "io.github.kdroidfilter.seforimlibrary:dao" }
 
 [plugins]
 
