@@ -149,4 +149,37 @@ class AcronymizerRepository(
         val preview = items.take(3).joinToString(" | ")
         println("[DB][UPDATE][TOC] id=${rowId} items=${items.size} preview=[${preview}] at ${createdAt}")
     }
+
+    // ---------------- Enrichment checkpoint APIs ----------------
+
+    /** A book pending enrichment together with its current list of acronyms. */
+    data class BookToEnrich(val id: Long, val title: String, val existingAcronyms: List<String>)
+
+    /**
+     * Returns up to [limit] books that have not been marked as enriched yet,
+     * each joined with its currently stored acronyms.
+     */
+    fun getBooksToEnrich(limit: Long): List<BookToEnrich> {
+        val rows = db.acronymizerDbQueries.selectBooksToEnrich(limit).executeAsList()
+        return rows.map { row ->
+            val acronyms = db.acronymizerDbQueries.getAcronymsByBookId(row.id).executeAsList().map { it.acronym }
+            BookToEnrich(id = row.id, title = row.title, existingAcronyms = acronyms)
+        }
+    }
+
+    /** Mark a book as enriched so the next run skips it. */
+    fun markBookEnriched(bookId: Long, additionsCount: Int, createdAt: Instant = Instant.now()) {
+        db.acronymizerDbQueries.markBookEnriched(
+            book_id = bookId,
+            enriched_at = createdAt.toString(),
+            additions_count = additionsCount.toLong(),
+        )
+    }
+
+    /** Pair of (enriched, total) book counts for progress reporting. */
+    fun enrichmentProgress(): Pair<Long, Long> {
+        val enriched = db.acronymizerDbQueries.countBooksEnriched().executeAsOne()
+        val total = db.acronymizerDbQueries.countBooksTotal().executeAsOne()
+        return enriched to total
+    }
 }

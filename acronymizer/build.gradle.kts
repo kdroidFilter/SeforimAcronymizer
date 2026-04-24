@@ -83,3 +83,23 @@ sqldelight {
         }
     }
 }
+
+tasks.register<JavaExec>("runEnrichSmokeTest") {
+    group = "application"
+    description = "Run the MiniMax enrichment smoke test on a handful of Hebrew titles."
+    dependsOn("jvmMainClasses")
+    mainClass.set("io.github.kdroidfilter.seforimacronymizer.enrich.SmokeTestEnrichKt")
+    classpath(kotlin.jvm().compilations.getByName("main").output.allOutputs)
+    classpath(configurations.getByName("jvmRuntimeClasspath"))
+    standardInput = System.`in`
+}
+
+tasks.register<JavaExec>("runEnrich") {
+    group = "application"
+    description = "Enrich acronymizer.db via MiniMax with missing bibliographic variants."
+    dependsOn("jvmMainClasses")
+    mainClass.set("io.github.kdroidfilter.seforimacronymizer.MainEnrichKt")
+    classpath(kotlin.jvm().compilations.getByName("main").output.allOutputs)
+    classpath(configurations.getByName("jvmRuntimeClasspath"))
+    standardInput = System.`in`
+}
