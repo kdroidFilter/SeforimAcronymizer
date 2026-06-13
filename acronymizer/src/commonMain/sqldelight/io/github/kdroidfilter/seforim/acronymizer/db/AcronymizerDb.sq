@@ -171,6 +171,23 @@ SET terms = ?, created_at = ?
 WHERE id = ?;
 
 -- ==========================================
+-- Dataset export queries
+-- ==========================================
+
+selectAllBookAcronymPairs:
+SELECT b.title, a.acronym
+FROM BookAcronyms ba
+JOIN Books b ON b.id = ba.book_id
+JOIN Acronyms a ON a.id = ba.acronym_id
+ORDER BY ba.book_id, ba.id;
+
+selectEnrichedBookTitles:
+SELECT b.title
+FROM BookEnrichment be
+JOIN Books b ON b.id = be.book_id
+ORDER BY b.title;
+
+-- ==========================================
 -- Enrichment checkpoint queries
 -- ==========================================
 

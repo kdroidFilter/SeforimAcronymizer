@@ -2,6 +2,14 @@
 
 Kotlin Multiplatform Library
 
+### Dataset
+
+The acronym data lives as version-controlled text files under [data/](data/) — see [data/README.md](data/README.md) for the format and contribution guide.
+`acronymizer.db` is generated from it:
+
+ - Build the DB: `./gradlew :acronymizer:buildDb`
+ - Export the DB back to text (after pipeline runs): `./gradlew :acronymizer:exportDataset`
+
 ### Run Sample App
 
  - Desktop JVM: `./gradlew :sample:composeApp:run`

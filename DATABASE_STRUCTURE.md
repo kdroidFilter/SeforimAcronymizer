@@ -4,6 +4,9 @@
 
 The database uses a normalized relational structure with junction tables to efficiently manage acronyms.
 
+> **Source of truth**: the database is generated from the text dataset under [`data/`](data/README.md)
+> via `./gradlew :acronymizer:buildDb`. Contribute data there, not to the `.db` file.
+
 ## Relational Schema
 
 ```

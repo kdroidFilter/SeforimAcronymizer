@@ -84,6 +84,26 @@ sqldelight {
     }
 }
 
+tasks.register<JavaExec>("exportDataset") {
+    group = "dataset"
+    description = "Export acronymizer.db into the versioned text dataset under data/."
+    dependsOn("jvmMainClasses")
+    mainClass.set("io.github.kdroidfilter.seforimacronymizer.dataset.MainExportDatasetKt")
+    classpath(kotlin.jvm().compilations.getByName("main").output.allOutputs)
+    classpath(configurations.getByName("jvmRuntimeClasspath"))
+    workingDir = rootDir
+}
+
+tasks.register<JavaExec>("buildDb") {
+    group = "dataset"
+    description = "Build acronymizer.db from the versioned text dataset under data/."
+    dependsOn("jvmMainClasses")
+    mainClass.set("io.github.kdroidfilter.seforimacronymizer.dataset.MainBuildDbKt")
+    classpath(kotlin.jvm().compilations.getByName("main").output.allOutputs)
+    classpath(configurations.getByName("jvmRuntimeClasspath"))
+    workingDir = rootDir
+}
+
 tasks.register<JavaExec>("runEnrichSmokeTest") {
     group = "application"
     description = "Run the MiniMax enrichment smoke test on a handful of Hebrew titles."

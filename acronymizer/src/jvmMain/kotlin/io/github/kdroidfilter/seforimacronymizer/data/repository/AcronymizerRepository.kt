@@ -19,6 +19,9 @@ class AcronymizerRepository(
 
     val db: SeforimAcronymizerDb by lazy { ensureDb(); SeforimAcronymizerDb(driver) }
 
+    /** Close the underlying JDBC driver, releasing the DB file. */
+    fun close() = driver.close()
+
     /** Ensure DB file exists and schema is created/updated if needed. */
     private fun ensureDb() {
         // Always ensure parent directories exist

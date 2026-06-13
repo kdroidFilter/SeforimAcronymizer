@@ -15,3 +15,5 @@ Pods/
 *.jks
 *.gpg
 *yarn.lock
+acronymizer.db
+acronymizer.db.build
