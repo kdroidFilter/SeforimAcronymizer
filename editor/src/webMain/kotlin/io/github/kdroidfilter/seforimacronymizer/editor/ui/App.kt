@@ -33,7 +33,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -112,18 +111,15 @@ fun App() {
     val model = remember { EditorModel(scope) }
     LaunchedEffect(Unit) { model.start() }
 
-    // Auto RTL: follow the active (browser) locale.
-    val lang = Locale.current.language.lowercase()
-    val direction = if (lang == "he" || lang == "iw") LayoutDirection.Rtl else LayoutDirection.Ltr
-
-    // App font covering both Latin (English UI) and Hebrew (data); Skiko web has no Hebrew otherwise.
+    // Hebrew-only UI: force RTL.
+    // App font covering Latin (Latin punctuation/digits) and Hebrew; Skiko web has no Hebrew otherwise.
     val appFont = FontFamily(
         Font(Res.font.heebo_regular, FontWeight.Normal),
         Font(Res.font.heebo_bold, FontWeight.Bold),
     )
 
     CompositionLocalProvider(
-        LocalLayoutDirection provides direction,
+        LocalLayoutDirection provides LayoutDirection.Rtl,
         LocalTextStyle provides TextStyle(fontFamily = appFont),
     ) {
         Box(Modifier.fillMaxSize().background(Bg)) {
