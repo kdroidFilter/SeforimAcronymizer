@@ -1,0 +1,50 @@
+name: Publish Database Release
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'data/acronymizer.sql'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install sqlite3
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+
+      - name: Build database
+        run: bash scripts/build-db.sh data/acronymizer.sql acronymizer.db
+
+      - name: Compute tag
+        run: |
+          base="$(date -u +%Y%m%d)"
+          tag="$base"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            tag="${base}.${{ github.run_number }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Release notes (diff vs previous)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p old
+          if gh release download --pattern acronymizer.db --dir old 2>/dev/null; then
+            bash scripts/diff-db.sh old/acronymizer.db acronymizer.db > notes.md
+          else
+            echo "Initial release." > notes.md
+          fi
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$tag" acronymizer.db --title "$tag" --notes-file notes.md

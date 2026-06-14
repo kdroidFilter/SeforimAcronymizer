@@ -1,0 +1,66 @@
+name: PR Database Diff
+
+on:
+  pull_request:
+    paths:
+      - 'data/acronymizer.sql'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Install sqlite3
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+
+      - name: Download latest release DB
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p old
+          if gh release download --pattern acronymizer.db --dir old 2>/dev/null; then
+            echo "has_old=true" >> "$GITHUB_ENV"
+          else
+            echo "No previous release found."
+            echo "has_old=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build proposed DB
+        run: bash scripts/build-db.sh data/acronymizer.sql new.db
+
+      - name: Compute diff
+        run: |
+          if [ "$has_old" = "true" ]; then
+            bash scripts/diff-db.sh old/acronymizer.db new.db > diff.md
+          else
+            {
+              echo "## 📊 Diff de la base Acronymizer"
+              echo
+              echo "_Aucune release précédente — base initiale._"
+              sqlite3 -batch new.db "SELECT 'Livres=' || (SELECT COUNT(*) FROM Books) || ', Acronymes=' || (SELECT COUNT(*) FROM Acronyms) || ', Liens=' || (SELECT COUNT(*) FROM BookAcronyms);"
+            } > diff.md
+          fi
+          cat diff.md
+
+      - name: Upsert PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- acronymizer-diff -->';
+            const body = marker + '\n' + fs.readFileSync('diff.md', 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

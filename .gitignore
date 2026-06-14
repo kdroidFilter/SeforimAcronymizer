@@ -15,3 +15,8 @@ Pods/
 *.jks
 *.gpg
 *yarn.lock
+kotlin-js-store
+node_modules
+.tmpwork
+# Built SQLite artifacts (source of truth is data/acronymizer.sql)
+*.db
