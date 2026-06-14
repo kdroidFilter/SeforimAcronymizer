@@ -3,7 +3,7 @@
     <string name="app_subtitle">עורך מסד הנתונים</string>
     <string name="chip_release">גרסה %1$s</string>
     <string name="chip_modified">שונה</string>
-    <string name="chip_token_ok">טוקן ✓</string>
+    <string name="chip_token_ok">טוקן מחובר</string>
     <string name="btn_clear_token">מחק טוקן</string>
     <string name="field_token_placeholder">טוקן GitHub (הרשאת repo)</string>
     <string name="btn_save">שמור</string>
@@ -12,7 +12,7 @@
     <string name="btn_creating">יוצר…</string>
     <string name="dialog_pr_title">הצעת Pull Request</string>
     <string name="dialog_pr_desc">%1$d שינויים מקומיים יוצעו בענף חדש.</string>
-    <string name="pr_created_check">ה-Pull Request נוצר ✓</string>
+    <string name="pr_created_check">ה-Pull Request נוצר</string>
     <string name="btn_open_pr">פתח את ה-PR</string>
     <string name="btn_close">סגור</string>
     <string name="btn_confirm">אשר</string>

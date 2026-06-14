@@ -49,8 +49,9 @@ class WebDb private constructor(
 
     // ---------------- Reads ----------------
 
+    /** Search both book titles and their acronyms, ranking title-prefix matches first. */
     suspend fun searchBooks(term: String, limit: Long = 200): List<Books> =
-        q.searchBooks(term, limit) { id, title -> Books(id, title) }.awaitAsList()
+        q.searchBooks(term.trim(), limit) { id, title -> Books(id, title) }.awaitAsList()
 
     suspend fun acronymsForBook(bookId: Long): List<Acronyms> =
         q.getAcronymsByBookId(bookId) { id, acronym -> Acronyms(id, acronym) }.awaitAsList()

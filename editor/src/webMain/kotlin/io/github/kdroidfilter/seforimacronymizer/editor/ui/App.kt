@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -37,13 +39,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.composables.core.ThumbVisibility
 import com.composeunstyled.Button
 import com.composeunstyled.LocalTextStyle
+import com.composeunstyled.ScrollArea
 import com.composeunstyled.Text
 import com.composeunstyled.TextField
 import com.composeunstyled.UnstyledDialog
 import com.composeunstyled.UnstyledDialogPanel
+import com.composeunstyled.UnstyledThumb
+import com.composeunstyled.UnstyledVerticalScrollbar
 import com.composeunstyled.rememberDialogState
+import com.composeunstyled.rememberScrollAreaState
 import io.github.kdroidfilter.seforim.acronymizer.db.Acronyms
 import io.github.kdroidfilter.seforim.acronymizer.db.Books
 import io.github.kdroidfilter.seforimacronymizer.editor.EditorModel
@@ -207,11 +214,9 @@ private fun Body(model: EditorModel) {
         ) {
             Field(model.search, { model.onSearch(it) }, stringResource(Res.string.field_search_placeholder))
             CreateBookRow(model)
-            Box(Modifier.weight(1f)) {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(model.books, key = { it.id }) { book ->
-                        BookRow(book, model.selected?.id == book.id) { model.selectBook(book) }
-                    }
+            ScrollableList(Modifier.weight(1f).fillMaxWidth()) {
+                items(model.books, key = { it.id }) { book ->
+                    BookRow(book, model.selected?.id == book.id) { model.selectBook(book) }
                 }
             }
             GhostButton(stringResource(Res.string.btn_clean_orphans)) { model.cleanOrphans() }
@@ -276,20 +281,18 @@ private fun BookEditor(model: EditorModel, book: Books) {
             PrimaryButton(stringResource(Res.string.btn_add)) { model.addAcronym(newAcronym); newAcronym = "" }
         }
 
-        Box(Modifier.weight(1f)) {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(model.acronyms, key = { it.id }) { a ->
-                    AcronymRow(
-                        acronym = a,
-                        editing = editingId == a.id,
-                        editText = editText,
-                        onEditTextChange = { editText = it },
-                        onStartEdit = { editingId = a.id; editText = a.acronym },
-                        onSaveEdit = { model.editAcronym(a, editText); editingId = null },
-                        onCancelEdit = { editingId = null },
-                        onRemove = { model.removeAcronym(a) },
-                    )
-                }
+        ScrollableList(Modifier.weight(1f).fillMaxWidth()) {
+            items(model.acronyms, key = { it.id }) { a ->
+                AcronymRow(
+                    acronym = a,
+                    editing = editingId == a.id,
+                    editText = editText,
+                    onEditTextChange = { editText = it },
+                    onStartEdit = { editingId = a.id; editText = a.acronym },
+                    onSaveEdit = { model.editAcronym(a, editText); editingId = null },
+                    onCancelEdit = { editingId = null },
+                    onRemove = { model.removeAcronym(a) },
+                )
             }
         }
     }
@@ -320,12 +323,34 @@ private fun AcronymRow(
             Text(acronym.acronym, color = TextMain, fontSize = 14.sp, textAlign = TextAlign.Right,
                 modifier = Modifier.weight(1f))
             GhostButton(stringResource(Res.string.btn_edit)) { onStartEdit() }
-            DangerButton("✕") { onRemove() }
+            DangerButton("×") { onRemove() }
         }
     }
 }
 
 // ---------------- Reusable styled primitives ----------------
+
+@Composable
+private fun ScrollableList(modifier: Modifier, content: LazyListScope.() -> Unit) {
+    val listState = rememberLazyListState()
+    val areaState = rememberScrollAreaState(listState)
+    ScrollArea(state = areaState, modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            content = content,
+        )
+        UnstyledVerticalScrollbar(
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(10.dp).padding(2.dp),
+        ) {
+            UnstyledThumb(
+                modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(BorderC),
+                thumbVisibility = ThumbVisibility.AlwaysVisible,
+            )
+        }
+    }
+}
 
 @Composable
 private fun Field(value: String, onValueChange: (String) -> Unit, placeholder: String) {
@@ -415,7 +440,7 @@ private fun ToastBar(toast: Toast, onDismiss: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(message, color = TextMain, fontSize = 13.sp)
-            Text("✕", color = TextDim, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onDismiss))
+            Text("×", color = TextDim, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onDismiss))
         }
     }
 }

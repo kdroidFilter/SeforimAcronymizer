@@ -74,7 +74,18 @@ getBookById:
 SELECT * FROM Books WHERE id = ?;
 
 searchBooks:
-SELECT * FROM Books WHERE title LIKE ('%' || ? || '%') ORDER BY title LIMIT ?;
+SELECT b.id, b.title
+FROM Books b
+WHERE b.title LIKE '%' || :q || '%'
+   OR b.id IN (
+     SELECT ba.book_id FROM BookAcronyms ba
+     JOIN Acronyms a ON a.id = ba.acronym_id
+     WHERE a.acronym LIKE '%' || :q || '%'
+   )
+ORDER BY
+   CASE WHEN b.title LIKE :q || '%' THEN 0 ELSE 1 END,
+   b.title
+LIMIT :lim;
 
 deleteBook:
 DELETE FROM Books WHERE id = ?;
