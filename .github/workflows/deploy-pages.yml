@@ -1,0 +1,60 @@
+name: Deploy Editor to Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'editor/**'
+      - 'db/**'
+      - 'acronymizer/src/commonMain/sqldelight/**'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+# One-time setup required: repo Settings → Pages → Source = "GitHub Actions".
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build editor (wasmJs)
+        run: ./gradlew :editor:wasmJsBrowserDistribution --no-configuration-cache
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: editor/build/dist/wasmJs/productionExecutable
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,5 @@
+# The canonical dump and shell scripts must stay LF so the editor's LF output
+# matches the repository blob exactly (clean PR diffs) and scripts run in CI.
+data/acronymizer.sql text eol=lf
+*.sql text eol=lf
+*.sh text eol=lf

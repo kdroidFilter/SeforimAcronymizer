@@ -73,6 +73,23 @@ SELECT * FROM Books ORDER BY id;
 getBookById:
 SELECT * FROM Books WHERE id = ?;
 
+searchBooks:
+SELECT b.id, b.title
+FROM Books b
+WHERE b.title LIKE '%' || :q || '%'
+   OR b.id IN (
+     SELECT ba.book_id FROM BookAcronyms ba
+     JOIN Acronyms a ON a.id = ba.acronym_id
+     WHERE a.acronym LIKE '%' || :q || '%'
+   )
+ORDER BY
+   CASE WHEN b.title LIKE :q || '%' THEN 0 ELSE 1 END,
+   b.title
+LIMIT :lim;
+
+deleteBook:
+DELETE FROM Books WHERE id = ?;
+
 -- ==========================================
 -- Acronyms operations
 -- ==========================================
@@ -90,6 +107,16 @@ SELECT * FROM Acronyms ORDER BY id;
 getAcronymById:
 SELECT * FROM Acronyms WHERE id = ?;
 
+updateAcronymText:
+UPDATE Acronyms SET acronym = ? WHERE id = ?;
+
+deleteAcronym:
+DELETE FROM Acronyms WHERE id = ?;
+
+deleteOrphanAcronyms:
+DELETE FROM Acronyms
+WHERE id NOT IN (SELECT DISTINCT acronym_id FROM BookAcronyms);
+
 -- ==========================================
 -- BookAcronyms junction operations
 -- ==========================================
@@ -103,6 +130,15 @@ DELETE FROM BookAcronyms WHERE book_id = ?;
 
 deleteBookAcronymsByAcronymId:
 DELETE FROM BookAcronyms WHERE acronym_id = ?;
+
+deleteBookAcronymLink:
+DELETE FROM BookAcronyms WHERE book_id = ? AND acronym_id = ?;
+
+getBookAcronymLink:
+SELECT * FROM BookAcronyms WHERE book_id = ? AND acronym_id = ?;
+
+selectAllBookAcronyms:
+SELECT id, book_id, acronym_id FROM BookAcronyms ORDER BY id;
 
 getAcronymsByBookId:
 SELECT a.id, a.acronym
