@@ -9,7 +9,6 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -24,28 +23,24 @@ class GitHubClient(
     private val tokenProvider: () -> String,
 ) {
     private val api = "https://api.github.com/repos/$owner/$repo"
-    private val raw = "https://raw.githubusercontent.com/$owner/$repo"
 
     private val http = HttpClient(Js) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
 
     private fun HttpRequestBuilder.auth() {
-        header("Authorization", "Bearer ${tokenProvider()}")
+        val token = tokenProvider()
+        if (token.isNotBlank()) header("Authorization", "Bearer $token")
         header("Accept", "application/vnd.github+json")
         header("X-GitHub-Api-Version", "2022-11-28")
     }
 
     /** Latest published release tag (no auth required for public repos). */
     suspend fun latestReleaseTag(): String? =
-        runCatching { http.get("$api/releases/latest").body<ReleaseInfo>().tag_name }.getOrNull()
+        runCatching { http.get("$api/releases/latest") { auth() }.body<ReleaseInfo>().tag_name }.getOrNull()
 
     suspend fun defaultBranch(): String =
         http.get(api) { auth() }.body<RepoInfo>().default_branch
-
-    /** The repo's canonical dump, which the release pipeline keeps in sync with the latest release. */
-    suspend fun fetchDump(branch: String): String =
-        http.get("$raw/$branch/data/acronymizer.sql").bodyAsText()
 
     @OptIn(ExperimentalEncodingApi::class)
     suspend fun proposePr(dump: String, title: String, body: String, branchName: String): String {

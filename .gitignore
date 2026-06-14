@@ -20,3 +20,5 @@ node_modules
 .tmpwork
 # Built SQLite artifacts (source of truth is data/acronymizer.sql)
 *.db
+# Generated: copied from data/acronymizer.sql into the app resources at build time
+editor/src/commonMain/composeResources/files/

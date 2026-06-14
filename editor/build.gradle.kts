@@ -32,6 +32,7 @@ kotlin {
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.ui)
+                implementation(compose.components.resources)
                 implementation(libs.compose.unstyled)
                 implementation(project(":db"))
                 implementation(libs.kotlinx.coroutines.core)
@@ -65,4 +66,23 @@ kotlin {
             }
         }
     }
+}
+
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "io.github.kdroidfilter.seforimacronymizer.editor.resources"
+}
+
+// Bundle the canonical dump (repo source of truth) into the app resources so the editor loads
+// its base offline — no runtime fetch from the repo. Regenerated on every build/deploy.
+val copyDbResource by tasks.registering(Copy::class) {
+    from(rootProject.file("data/acronymizer.sql"))
+    into(layout.projectDirectory.dir("src/commonMain/composeResources/files"))
+}
+tasks.matching {
+    (it.name.contains("Resources") || it.name.endsWith("BrowserDistribution") ||
+        it.name.endsWith("BrowserProductionWebpack") || it.name.endsWith("BrowserDevelopmentWebpack")) &&
+        it.name != "copyDbResource"
+}.configureEach {
+    dependsOn(copyDbResource)
 }

@@ -10,6 +10,7 @@ import io.github.kdroidfilter.seforimacronymizer.editor.data.EditLog
 import io.github.kdroidfilter.seforimacronymizer.editor.data.EditOp
 import io.github.kdroidfilter.seforimacronymizer.editor.data.WebDb
 import io.github.kdroidfilter.seforimacronymizer.editor.github.GitHubClient
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.Res
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -17,6 +18,18 @@ sealed interface Phase {
     data object Loading : Phase
     data object Ready : Phase
     data class Error(val message: String) : Phase
+}
+
+/** Localizable toast events; the UI maps them to string resources. */
+sealed interface Toast {
+    data object TokenSaved : Toast
+    data object TokenCleared : Toast
+    data object Orphans : Toast
+    data class DraftRestored(val count: Int) : Toast
+    data object Reset : Toast
+    data object PrCreated : Toast
+    data class PrFailed(val message: String) : Toast
+    data object NeedToken : Toast
 }
 
 /** Holds all UI state and orchestrates DB loading, editing, persistence and PR creation. */
@@ -42,33 +55,31 @@ class EditorModel(private val scope: CoroutineScope) {
 
     var busy by mutableStateOf(false)
         private set
-    var toast by mutableStateOf<String?>(null)
+    var toast by mutableStateOf<Toast?>(null)
     var prUrl by mutableStateOf<String?>(null)
         private set
-    var showPrDialog by mutableStateOf(false)
 
     private lateinit var db: WebDb
     private val github = GitHubClient(tokenProvider = { token })
     private var baseDump: String = ""
-    private var baseBranch: String = "master"
 
     fun start() = scope.launch {
         try {
             db = WebDb.open()
             baseTag = github.latestReleaseTag()
-            baseBranch = runCatching { github.defaultBranch() }.getOrDefault("master")
-            baseDump = github.fetchDump(baseBranch)
+            // Base comes from the app's own bundled resource (no network fetch).
+            baseDump = Res.readBytes("files/acronymizer.sql").decodeToString()
             db.loadDump(baseDump)
             EditLog.load()
             if (!EditLog.isEmpty()) {
                 for (op in EditLog.ops.toList()) db.replay(op)
                 dirty = true
-                toast = "Brouillon non publié restauré (${EditLog.ops.size} modifications)."
+                toast = Toast.DraftRestored(EditLog.ops.size)
             }
             refresh()
             phase = Phase.Ready
         } catch (t: Throwable) {
-            phase = Phase.Error(t.message ?: "Erreur de chargement")
+            phase = Phase.Error(t.message ?: "Loading error")
         }
     }
 
@@ -162,7 +173,7 @@ class EditorModel(private val scope: CoroutineScope) {
             db.cleanOrphans()
             EditLog.append(EditOp.CleanOrphans)
             markDirty()
-            toast = "Acronymes orphelins supprimés."
+            toast = Toast.Orphans
         }
     }
 
@@ -171,16 +182,16 @@ class EditorModel(private val scope: CoroutineScope) {
         if (t.isEmpty()) return
         TokenStore.save(t)
         token = t
-        toast = "Token enregistré."
+        toast = Toast.TokenSaved
     }
 
     fun clearToken() {
         TokenStore.clear()
         token = ""
-        toast = "Token effacé."
+        toast = Toast.TokenCleared
     }
 
-    /** Discard all local edits and reload the clean base release. */
+    /** Discard all local edits and reload the clean bundled base. */
     fun resetAll() {
         scope.launch {
             EditLog.clear()
@@ -191,13 +202,13 @@ class EditorModel(private val scope: CoroutineScope) {
             acronyms.clear()
             prUrl = null
             refresh()
-            toast = "Toutes les modifications ont été réinitialisées."
+            toast = Toast.Reset
         }
     }
 
     fun proposePr() {
         if (!hasToken) {
-            toast = "Renseignez d'abord un token GitHub."
+            toast = Toast.NeedToken
             return
         }
         scope.launch {
@@ -206,22 +217,23 @@ class EditorModel(private val scope: CoroutineScope) {
             try {
                 val dump = db.exportCanonical()
                 val suffix = nextBranchSuffix()
-                val summary = editSummary()
                 val url = github.proposePr(
                     dump = dump,
-                    title = "Édition de la base Acronymizer (#$suffix)",
-                    body = "Modifications proposées via l'éditeur web.\n\n$summary",
+                    title = "Edit Acronymizer database (#$suffix)",
+                    body = "Changes proposed from the web editor.\n\n${editSummary()}",
                     branchName = "edit/$suffix",
                 )
                 prUrl = url
-                toast = "Pull request créée."
+                toast = Toast.PrCreated
             } catch (t: Throwable) {
-                toast = "Échec de la PR : ${t.message}"
+                toast = Toast.PrFailed(t.message ?: "unknown error")
             } finally {
                 busy = false
             }
         }
     }
+
+    fun pendingChanges(): Int = EditLog.ops.size
 
     private fun editSummary(): String {
         val ops = EditLog.ops
@@ -230,10 +242,10 @@ class EditorModel(private val scope: CoroutineScope) {
         val newBooks = ops.count { it is EditOp.CreateBook }
         val delBooks = ops.count { it is EditOp.DeleteBook }
         return buildString {
-            append("- Acronymes ajoutés : ").append(adds).append('\n')
-            append("- Acronymes retirés : ").append(removes).append('\n')
-            append("- Livres créés : ").append(newBooks).append('\n')
-            append("- Livres supprimés : ").append(delBooks)
+            append("- Acronyms added: ").append(adds).append('\n')
+            append("- Acronyms removed: ").append(removes).append('\n')
+            append("- Books created: ").append(newBooks).append('\n')
+            append("- Books deleted: ").append(delBooks)
         }
     }
 

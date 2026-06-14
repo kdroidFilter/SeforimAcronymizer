@@ -6,19 +6,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,8 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composeunstyled.Button
@@ -43,8 +46,49 @@ import io.github.kdroidfilter.seforim.acronymizer.db.Acronyms
 import io.github.kdroidfilter.seforim.acronymizer.db.Books
 import io.github.kdroidfilter.seforimacronymizer.editor.EditorModel
 import io.github.kdroidfilter.seforimacronymizer.editor.Phase
-import io.github.kdroidfilter.seforimacronymizer.editor.data.EditLog
+import io.github.kdroidfilter.seforimacronymizer.editor.Toast
 import io.github.kdroidfilter.seforimacronymizer.editor.openUrl
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.Res
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.app_subtitle
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.app_title
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_add
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_cancel
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_clean_orphans
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_clear_token
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_close
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_confirm
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_create
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_creating
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_delete_book
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_edit
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_ok
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_open_pr
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_propose_pr
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_reset_all
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_save
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.btn_sending
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.chip_modified
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.chip_release
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.chip_token_ok
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.dialog_pr_desc
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.dialog_pr_title
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.empty_selection
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.error_prefix
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_add_acronym_placeholder
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_new_book_placeholder
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_search_placeholder
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_token_placeholder
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.loading
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.pr_created_check
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_draft_restored
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_need_token
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_orphans
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_pr_created
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_pr_failed
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_reset
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_token_cleared
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_token_saved
+import org.jetbrains.compose.resources.stringResource
 
 private val Bg = Color(0xFF0F172A)
 private val Surface = Color(0xFF1E293B)
@@ -62,16 +106,22 @@ fun App() {
     val model = remember { EditorModel(scope) }
     LaunchedEffect(Unit) { model.start() }
 
-    Box(Modifier.fillMaxSize().background(Bg)) {
-        Column(Modifier.fillMaxSize()) {
-            Header(model)
-            when (val p = model.phase) {
-                Phase.Loading -> Centered("Chargement de la base…")
-                is Phase.Error -> Centered("Erreur : ${p.message}", Danger)
-                Phase.Ready -> Body(model)
+    // Auto RTL: follow the active (browser) locale.
+    val lang = Locale.current.language.lowercase()
+    val direction = if (lang == "he" || lang == "iw") LayoutDirection.Rtl else LayoutDirection.Ltr
+
+    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+        Box(Modifier.fillMaxSize().background(Bg)) {
+            Column(Modifier.fillMaxSize()) {
+                Header(model)
+                when (val p = model.phase) {
+                    Phase.Loading -> Centered(stringResource(Res.string.loading))
+                    is Phase.Error -> Centered(stringResource(Res.string.error_prefix, p.message), Danger)
+                    Phase.Ready -> Body(model)
+                }
             }
+            model.toast?.let { ToastBar(it) { model.toast = null } }
         }
-        model.toast?.let { ToastBar(it) { model.toast = null } }
     }
 }
 
@@ -85,25 +135,25 @@ private fun Header(model: EditorModel) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Acronymizer", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("Éditeur de base", color = TextDim, fontSize = 13.sp)
-        model.baseTag?.let { Chip("release $it", SurfaceAlt, TextDim) }
-        if (model.dirty) Chip("modifié", Accent, Color.White)
+        Text(stringResource(Res.string.app_title), color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text(stringResource(Res.string.app_subtitle), color = TextDim, fontSize = 13.sp)
+        model.baseTag?.let { Chip(stringResource(Res.string.chip_release, it), SurfaceAlt, TextDim) }
+        if (model.dirty) Chip(stringResource(Res.string.chip_modified), Accent, Color.White)
 
         Spacer(Modifier.weight(1f))
 
         if (model.hasToken) {
-            Chip("token ✓", SurfaceAlt, Good)
-            GhostButton("Effacer le token") { model.clearToken() }
+            Chip(stringResource(Res.string.chip_token_ok), SurfaceAlt, Good)
+            GhostButton(stringResource(Res.string.btn_clear_token)) { model.clearToken() }
         } else {
             Box(Modifier.width(220.dp)) {
-                Field(tokenField, { tokenField = it }, "Token GitHub (scope repo)")
+                Field(tokenField, { tokenField = it }, stringResource(Res.string.field_token_placeholder))
             }
-            PrimaryButton("Enregistrer") { model.saveToken(tokenField); tokenField = "" }
+            PrimaryButton(stringResource(Res.string.btn_save)) { model.saveToken(tokenField); tokenField = "" }
         }
 
-        GhostButton("Tout réinitialiser") { model.resetAll() }
-        PrimaryButton(if (model.busy) "Création…" else "Proposer une PR") {
+        GhostButton(stringResource(Res.string.btn_reset_all)) { model.resetAll() }
+        PrimaryButton(if (model.busy) stringResource(Res.string.btn_creating) else stringResource(Res.string.btn_propose_pr)) {
             if (!model.busy) prDialog.visible = true
         }
     }
@@ -117,20 +167,17 @@ private fun Header(model: EditorModel) {
                 .padding(20.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Proposer une Pull Request", color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "${EditLog.ops.size} modification(s) locales seront proposées sur une nouvelle branche.",
-                    color = TextDim, fontSize = 13.sp,
-                )
+                Text(stringResource(Res.string.dialog_pr_title), color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(stringResource(Res.string.dialog_pr_desc, model.pendingChanges()), color = TextDim, fontSize = 13.sp)
                 val url = model.prUrl
                 if (url != null) {
-                    Text("Pull request créée ✓", color = Good, fontSize = 14.sp)
-                    PrimaryButton("Ouvrir la PR") { openUrl(url) }
+                    Text(stringResource(Res.string.pr_created_check), color = Good, fontSize = 14.sp)
+                    PrimaryButton(stringResource(Res.string.btn_open_pr)) { openUrl(url) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    GhostButton("Fermer") { prDialog.visible = false }
+                    GhostButton(stringResource(Res.string.btn_close)) { prDialog.visible = false }
                     if (url == null) {
-                        PrimaryButton(if (model.busy) "Envoi…" else "Confirmer") {
+                        PrimaryButton(if (model.busy) stringResource(Res.string.btn_sending) else stringResource(Res.string.btn_confirm)) {
                             if (!model.busy) model.proposePr()
                         }
                     }
@@ -147,7 +194,7 @@ private fun Body(model: EditorModel) {
             Modifier.weight(0.38f).fillMaxHeight().background(Bg).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Field(model.search, { model.onSearch(it) }, "Rechercher un livre…")
+            Field(model.search, { model.onSearch(it) }, stringResource(Res.string.field_search_placeholder))
             CreateBookRow(model)
             Box(Modifier.weight(1f)) {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -156,7 +203,7 @@ private fun Body(model: EditorModel) {
                     }
                 }
             }
-            GhostButton("Nettoyer les acronymes orphelins") { model.cleanOrphans() }
+            GhostButton(stringResource(Res.string.btn_clean_orphans)) { model.cleanOrphans() }
         }
 
         Box(Modifier.width(1.dp).fillMaxHeight().background(BorderC))
@@ -164,7 +211,7 @@ private fun Body(model: EditorModel) {
         Box(Modifier.weight(0.62f).fillMaxHeight().background(Bg).padding(16.dp)) {
             val book = model.selected
             if (book == null) {
-                Centered("Sélectionnez un livre pour éditer ses acronymes.", TextDim)
+                Centered(stringResource(Res.string.empty_selection), TextDim)
             } else {
                 BookEditor(model, book)
             }
@@ -176,8 +223,8 @@ private fun Body(model: EditorModel) {
 private fun CreateBookRow(model: EditorModel) {
     var title by remember { mutableStateOf("") }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f)) { Field(title, { title = it }, "Nouveau livre…") }
-        PrimaryButton("Créer") { model.createBook(title); title = "" }
+        Box(Modifier.weight(1f)) { Field(title, { title = it }, stringResource(Res.string.field_new_book_placeholder)) }
+        PrimaryButton(stringResource(Res.string.btn_create)) { model.createBook(title); title = "" }
     }
 }
 
@@ -210,12 +257,12 @@ private fun BookEditor(model: EditorModel, book: Books) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(book.title, color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Right, modifier = Modifier.weight(1f))
-            DangerButton("Supprimer le livre") { model.deleteBook(book) }
+            DangerButton(stringResource(Res.string.btn_delete_book)) { model.deleteBook(book) }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { Field(newAcronym, { newAcronym = it }, "Ajouter un acronyme…") }
-            PrimaryButton("Ajouter") { model.addAcronym(newAcronym); newAcronym = "" }
+            Box(Modifier.weight(1f)) { Field(newAcronym, { newAcronym = it }, stringResource(Res.string.field_add_acronym_placeholder)) }
+            PrimaryButton(stringResource(Res.string.btn_add)) { model.addAcronym(newAcronym); newAcronym = "" }
         }
 
         Box(Modifier.weight(1f)) {
@@ -256,12 +303,12 @@ private fun AcronymRow(
     ) {
         if (editing) {
             Box(Modifier.weight(1f)) { Field(editText, onEditTextChange, "") }
-            GhostButton("OK") { onSaveEdit() }
-            GhostButton("Annuler") { onCancelEdit() }
+            GhostButton(stringResource(Res.string.btn_ok)) { onSaveEdit() }
+            GhostButton(stringResource(Res.string.btn_cancel)) { onCancelEdit() }
         } else {
             Text(acronym.acronym, color = TextMain, fontSize = 14.sp, textAlign = TextAlign.Right,
                 modifier = Modifier.weight(1f))
-            GhostButton("Éditer") { onStartEdit() }
+            GhostButton(stringResource(Res.string.btn_edit)) { onStartEdit() }
             DangerButton("✕") { onRemove() }
         }
     }
@@ -281,7 +328,7 @@ private fun Field(value: String, onValueChange: (String) -> Unit, placeholder: S
         borderColor = BorderC,
         borderWidth = 1.dp,
         shape = RoundedCornerShape(8.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
         fontSize = 14.sp,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -294,7 +341,7 @@ private fun PrimaryButton(label: String, onClick: () -> Unit) {
         backgroundColor = Accent,
         contentColor = Color.White,
         shape = RoundedCornerShape(8.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 9.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
     ) { Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
 }
 
@@ -307,7 +354,7 @@ private fun GhostButton(label: String, onClick: () -> Unit) {
         shape = RoundedCornerShape(8.dp),
         borderColor = BorderC,
         borderWidth = 1.dp,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     ) { Text(label, color = TextMain, fontSize = 13.sp) }
 }
 
@@ -318,7 +365,7 @@ private fun DangerButton(label: String, onClick: () -> Unit) {
         backgroundColor = Color(0x33F87171),
         contentColor = Danger,
         shape = RoundedCornerShape(8.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     ) { Text(label, color = Danger, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
 }
 
@@ -337,7 +384,17 @@ private fun Centered(text: String, color: Color = TextDim) {
 }
 
 @Composable
-private fun ToastBar(message: String, onDismiss: () -> Unit) {
+private fun ToastBar(toast: Toast, onDismiss: () -> Unit) {
+    val message = when (toast) {
+        Toast.TokenSaved -> stringResource(Res.string.toast_token_saved)
+        Toast.TokenCleared -> stringResource(Res.string.toast_token_cleared)
+        Toast.Orphans -> stringResource(Res.string.toast_orphans)
+        is Toast.DraftRestored -> stringResource(Res.string.toast_draft_restored, toast.count)
+        Toast.Reset -> stringResource(Res.string.toast_reset)
+        Toast.PrCreated -> stringResource(Res.string.toast_pr_created)
+        is Toast.PrFailed -> stringResource(Res.string.toast_pr_failed, toast.message)
+        Toast.NeedToken -> stringResource(Res.string.toast_need_token)
+    }
     Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.BottomCenter) {
         Row(
             Modifier.clip(RoundedCornerShape(10.dp)).background(SurfaceAlt)
