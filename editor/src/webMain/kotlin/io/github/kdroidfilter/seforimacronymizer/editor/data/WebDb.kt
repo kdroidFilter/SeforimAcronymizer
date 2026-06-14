@@ -16,16 +16,35 @@ class WebDb private constructor(
     private val q get() = db.acronymizerDbQueries
 
     companion object {
+        // Number of dump lines (one statement per line) executed per worker round-trip.
+        // Sending the whole ~9 MB dump in one db.exec overflows the sql.js wasm memory,
+        // so we stream it in batches inside a single transaction.
+        private const val BATCH_LINES = 1000
+
         suspend fun open(): WebDb {
             val driver = createDefaultWebWorkerDriver()
-            AcronymizerWebDb.Schema.create(driver).await()
+            // No Schema.create: the canonical dump's own DDL (CREATE TABLE IF NOT EXISTS …)
+            // is the single source of the schema.
             return WebDb(driver, AcronymizerWebDb(driver))
         }
     }
 
-    /** Load a full canonical dump into the empty DB in a single worker round-trip (sql.js db.exec). */
+    /** Load a full canonical dump into the empty DB in batches (avoids sql.js OOM on the 9 MB string). */
     suspend fun loadDump(sql: String) {
-        driver.execute(null, sql, 0).await()
+        val lines = sql.split('\n')
+        val firstInsert = lines.indexOfFirst { it.startsWith("INSERT ") }
+        // Header = PRAGMA + BEGIN TRANSACTION + multi-line CREATE statements + view (opens the transaction).
+        val header = if (firstInsert >= 0) lines.subList(0, firstInsert) else lines
+        driver.execute(null, header.joinToString("\n"), 0).await()
+        if (firstInsert < 0) return
+        // Remaining one-statement-per-line INSERTs, ending with COMMIT, sent in batches.
+        var i = firstInsert
+        while (i < lines.size) {
+            val end = minOf(i + BATCH_LINES, lines.size)
+            val chunk = lines.subList(i, end).joinToString("\n")
+            if (chunk.isNotBlank()) driver.execute(null, chunk, 0).await()
+            i = end
+        }
     }
 
     // ---------------- Reads ----------------
