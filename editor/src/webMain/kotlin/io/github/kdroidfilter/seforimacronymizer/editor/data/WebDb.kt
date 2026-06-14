@@ -3,7 +3,6 @@ package io.github.kdroidfilter.seforimacronymizer.editor.data
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.worker.createDefaultWebWorkerDriver
 import io.github.kdroidfilter.seforim.acronymizer.db.Acronyms
 import io.github.kdroidfilter.seforim.acronymizer.db.Books
 import io.github.kdroidfilter.seforim.acronymizer.webdb.AcronymizerWebDb
@@ -22,7 +21,9 @@ class WebDb private constructor(
         private const val BATCH_LINES = 1000
 
         suspend fun open(): WebDb {
-            val driver = createDefaultWebWorkerDriver()
+            // Our own worker (resolves sql-wasm.* relative to itself) instead of the default one,
+            // whose hardcoded '/sql-wasm.wasm' breaks on GitHub Pages project subpaths.
+            val driver = createSqlWorkerDriver()
             // No Schema.create: the canonical dump's own DDL (CREATE TABLE IF NOT EXISTS …)
             // is the single source of the schema.
             return WebDb(driver, AcronymizerWebDb(driver))
@@ -47,11 +48,47 @@ class WebDb private constructor(
         }
     }
 
-    // ---------------- Reads ----------------
+    // ---------------- Search (in-memory, punctuation-insensitive) ----------------
 
-    /** Search both book titles and their acronyms, ranking title-prefix matches first. */
-    suspend fun searchBooks(term: String, limit: Long = 200): List<Books> =
-        q.searchBooks(term.trim(), limit) { id, title -> Books(id, title) }.awaitAsList()
+    private class BookEntry(val book: Books, val titleNorm: String, val acronymsNorm: List<String>)
+
+    private var searchIndex: List<BookEntry>? = null
+
+    private suspend fun ensureIndex(): List<BookEntry> {
+        searchIndex?.let { return it }
+        val books = q.getAllBooks { id, title -> Books(id, title) }.awaitAsList()
+        val acronymText = q.getAllAcronyms { id, acronym -> id to acronym }.awaitAsList().toMap()
+        val byBook = HashMap<Long, MutableList<String>>()
+        q.selectAllBookAcronyms { _, bookId, acronymId -> bookId to acronymId }.awaitAsList()
+            .forEach { (bookId, acronymId) ->
+                acronymText[acronymId]?.let { byBook.getOrPut(bookId) { mutableListOf() }.add(it) }
+            }
+        val built = books
+            .map { BookEntry(it, normalizeSearch(it.title), (byBook[it.id] ?: emptyList()).map(::normalizeSearch)) }
+            .sortedBy { it.book.title }
+        searchIndex = built
+        return built
+    }
+
+    /** Search titles and acronyms, ignoring punctuation; title-prefix matches rank first. No cap. */
+    suspend fun searchBooks(term: String): List<Books> {
+        val query = normalizeSearch(term)
+        val entries = ensureIndex()
+        if (query.isEmpty()) return entries.map { it.book }
+        return entries
+            .filter { it.titleNorm.contains(query) || it.acronymsNorm.any { a -> a.contains(query) } }
+            .sortedWith(compareBy({ if (it.titleNorm.startsWith(query)) 0 else 1 }, { it.book.title }))
+            .map { it.book }
+    }
+
+    // Drop everything that is punctuation/whitespace so matching is on letters only:
+    // space, comma, period, straight quotes, Hebrew gershayim (״) / geresh (׳), maqaf (־), hyphen.
+    private fun normalizeSearch(s: String): String = s.filterNot {
+        it == ' ' || it == ',' || it == '.' || it == '"' || it == '\'' ||
+            it == '״' || it == '׳' || it == '־' || it == '-'
+    }
+
+    // ---------------- Reads ----------------
 
     suspend fun acronymsForBook(bookId: Long): List<Acronyms> =
         q.getAcronymsByBookId(bookId) { id, acronym -> Acronyms(id, acronym) }.awaitAsList()
@@ -66,6 +103,7 @@ class WebDb private constructor(
 
     suspend fun createBook(title: String): Long? {
         q.insertBook(title)
+        searchIndex = null
         return bookIdByTitle(title)
     }
 
@@ -73,6 +111,7 @@ class WebDb private constructor(
         // sql.js has foreign keys OFF by default, so remove links explicitly before the book.
         q.deleteBookAcronymsByBookId(bookId)
         q.deleteBook(bookId)
+        searchIndex = null
     }
 
     suspend fun addLink(bookId: Long, acronym: String): Boolean {
@@ -81,15 +120,18 @@ class WebDb private constructor(
         q.insertAcronym(text)
         val acronymId = acronymIdByText(text) ?: return false
         q.insertBookAcronym(bookId, acronymId)
+        searchIndex = null
         return true
     }
 
     suspend fun removeLink(bookId: Long, acronymId: Long) {
         q.deleteBookAcronymLink(bookId, acronymId)
+        searchIndex = null
     }
 
     suspend fun cleanOrphans() {
         q.deleteOrphanAcronyms()
+        searchIndex = null
     }
 
     /** Replay a persisted edit on top of the freshly loaded base. */
@@ -134,3 +176,10 @@ class WebDb private constructor(
 
     private fun esc(s: String): String = s.replace("'", "''")
 }
+
+/**
+ * Builds the SQLDelight web-worker driver backed by our own sqljs.worker.js (resolved same-origin).
+ * Platform-specific because the driver's Worker type and the js() interop differ between
+ * Kotlin/JS and Kotlin/Wasm.
+ */
+internal expect fun createSqlWorkerDriver(): SqlDriver

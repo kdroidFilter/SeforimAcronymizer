@@ -11,8 +11,10 @@ const CopyWebpackPlugin = require('copy-webpack-plugin');
 config.plugins.push(
     new CopyWebpackPlugin({
         patterns: [
-            // require.resolve finds the wasm regardless of the per-target node_modules depth.
+            // require.resolve finds the files regardless of the per-target node_modules depth.
+            // Both are loaded by our custom sqljs.worker.js, relative to the worker's own URL.
             { from: require.resolve('sql.js/dist/sql-wasm.wasm'), to: '.' },
+            { from: require.resolve('sql.js/dist/sql-wasm.js'), to: '.' },
         ],
     })
 );

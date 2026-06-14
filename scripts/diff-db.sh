@@ -33,28 +33,28 @@ section() { # title, query
   echo "<details><summary>$title</summary>"
   echo
   if [ -z "$rows" ]; then
-    echo "_aucun_"
+    echo "_none_"
   else
     printf '%s\n' "$rows" | head -n "$CAP" | sed 's/^/- /'
-    [ "$n" -gt "$CAP" ] && echo "- … (+$((n-CAP)) de plus, tronqué)"
+    [ "$n" -gt "$CAP" ] && echo "- … (+$((n-CAP)) more, truncated)"
   fi
   echo
   echo "</details>"
 }
 
-echo "## 📊 Diff de la base Acronymizer"
+echo "## 📊 Acronymizer database diff"
 echo
-echo "| | Précédent | Proposé | Δ |"
+echo "| | Previous | Proposed | Δ |"
 echo "|---|---:|---:|---:|"
-echo "| Livres | $books_old | $books_new | $((books_new-books_old)) |"
-echo "| Acronymes | $acr_old | $acr_new | $((acr_new-acr_old)) |"
-echo "| Liens | $link_old | $link_new | $((link_new-link_old)) |"
+echo "| Books | $books_old | $books_new | $((books_new-books_old)) |"
+echo "| Acronyms | $acr_old | $acr_new | $((acr_new-acr_old)) |"
+echo "| Links | $link_old | $link_new | $((link_new-link_old)) |"
 echo
-echo "**Ajouts :** ${books_added} livres · ${acr_added} acronymes · ${links_added} liens — **Suppressions :** ${books_removed} livres · ${acr_removed} acronymes · ${links_removed} liens"
+echo "**Added:** ${books_added} books · ${acr_added} acronyms · ${links_added} links — **Removed:** ${books_removed} books · ${acr_removed} acronyms · ${links_removed} links"
 echo
-section "➕ Livres ajoutés ($books_added)" "SELECT title FROM new.Books EXCEPT SELECT title FROM old.Books ORDER BY title"
-section "➖ Livres supprimés ($books_removed)" "SELECT title FROM old.Books EXCEPT SELECT title FROM new.Books ORDER BY title"
-section "➕ Acronymes ajoutés ($acr_added)" "SELECT acronym FROM new.Acronyms EXCEPT SELECT acronym FROM old.Acronyms ORDER BY acronym"
-section "➖ Acronymes supprimés ($acr_removed)" "SELECT acronym FROM old.Acronyms EXCEPT SELECT acronym FROM new.Acronyms ORDER BY acronym"
-section "➕ Liens ajoutés ($links_added)" "SELECT title || ' → ' || acronym FROM ($LINK_NEW EXCEPT $LINK_OLD) ORDER BY 1"
-section "➖ Liens supprimés ($links_removed)" "SELECT title || ' → ' || acronym FROM ($LINK_OLD EXCEPT $LINK_NEW) ORDER BY 1"
+section "➕ Books added ($books_added)" "SELECT title FROM new.Books EXCEPT SELECT title FROM old.Books ORDER BY title"
+section "➖ Books removed ($books_removed)" "SELECT title FROM old.Books EXCEPT SELECT title FROM new.Books ORDER BY title"
+section "➕ Acronyms added ($acr_added)" "SELECT acronym FROM new.Acronyms EXCEPT SELECT acronym FROM old.Acronyms ORDER BY acronym"
+section "➖ Acronyms removed ($acr_removed)" "SELECT acronym FROM old.Acronyms EXCEPT SELECT acronym FROM new.Acronyms ORDER BY acronym"
+section "➕ Links added ($links_added)" "SELECT title || ' → ' || acronym FROM ($LINK_NEW EXCEPT $LINK_OLD) ORDER BY 1"
+section "➖ Links removed ($links_removed)" "SELECT title || ' → ' || acronym FROM ($LINK_OLD EXCEPT $LINK_NEW) ORDER BY 1"

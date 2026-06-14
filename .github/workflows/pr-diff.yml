@@ -40,10 +40,10 @@ jobs:
             bash scripts/diff-db.sh old/acronymizer.db new.db > diff.md
           else
             {
-              echo "## 📊 Diff de la base Acronymizer"
+              echo "## 📊 Acronymizer database diff"
               echo
-              echo "_Aucune release précédente — base initiale._"
-              sqlite3 -batch new.db "SELECT 'Livres=' || (SELECT COUNT(*) FROM Books) || ', Acronymes=' || (SELECT COUNT(*) FROM Acronyms) || ', Liens=' || (SELECT COUNT(*) FROM BookAcronyms);"
+              echo "_No previous release — initial database._"
+              sqlite3 -batch new.db "SELECT 'Books=' || (SELECT COUNT(*) FROM Books) || ', Acronyms=' || (SELECT COUNT(*) FROM Acronyms) || ', Links=' || (SELECT COUNT(*) FROM BookAcronyms);"
             } > diff.md
           fi
           cat diff.md
