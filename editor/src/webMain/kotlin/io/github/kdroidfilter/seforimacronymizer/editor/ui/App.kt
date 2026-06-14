@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.composeunstyled.Button
+import com.composeunstyled.LocalTextStyle
 import com.composeunstyled.Text
 import com.composeunstyled.TextField
 import com.composeunstyled.UnstyledDialog
@@ -78,6 +81,8 @@ import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_add_acro
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_new_book_placeholder
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_search_placeholder
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.field_token_placeholder
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.heebo_bold
+import io.github.kdroidfilter.seforimacronymizer.editor.resources.heebo_regular
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.loading
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.pr_created_check
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_draft_restored
@@ -88,6 +93,7 @@ import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_pr_faile
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_reset
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_token_cleared
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_token_saved
+import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.stringResource
 
 private val Bg = Color(0xFF0F172A)
@@ -110,7 +116,16 @@ fun App() {
     val lang = Locale.current.language.lowercase()
     val direction = if (lang == "he" || lang == "iw") LayoutDirection.Rtl else LayoutDirection.Ltr
 
-    CompositionLocalProvider(LocalLayoutDirection provides direction) {
+    // App font covering both Latin (English UI) and Hebrew (data); Skiko web has no Hebrew otherwise.
+    val appFont = FontFamily(
+        Font(Res.font.heebo_regular, FontWeight.Normal),
+        Font(Res.font.heebo_bold, FontWeight.Bold),
+    )
+
+    CompositionLocalProvider(
+        LocalLayoutDirection provides direction,
+        LocalTextStyle provides TextStyle(fontFamily = appFont),
+    ) {
         Box(Modifier.fillMaxSize().background(Bg)) {
             Column(Modifier.fillMaxSize()) {
                 Header(model)
