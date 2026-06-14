@@ -3,8 +3,11 @@ package io.github.kdroidfilter.seforimacronymizer.editor.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,10 +15,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,26 +37,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.composables.core.ThumbVisibility
-import com.composeunstyled.Button
 import com.composeunstyled.LocalTextStyle
-import com.composeunstyled.ScrollArea
-import com.composeunstyled.Text
-import com.composeunstyled.TextField
+import com.composeunstyled.UnstyledButton as Button
 import com.composeunstyled.UnstyledDialog
 import com.composeunstyled.UnstyledDialogPanel
-import com.composeunstyled.UnstyledThumb
-import com.composeunstyled.UnstyledVerticalScrollbar
+import com.composeunstyled.UnstyledText as Text
+import com.composeunstyled.UnstyledTextField as TextField
 import com.composeunstyled.rememberDialogState
-import com.composeunstyled.rememberScrollAreaState
 import io.github.kdroidfilter.seforim.acronymizer.db.Acronyms
 import io.github.kdroidfilter.seforim.acronymizer.db.Books
 import io.github.kdroidfilter.seforimacronymizer.editor.EditorModel
@@ -99,6 +103,8 @@ import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_pr_faile
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_reset
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_token_cleared
 import io.github.kdroidfilter.seforimacronymizer.editor.resources.toast_token_saved
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.stringResource
 
@@ -333,24 +339,62 @@ private fun AcronymRow(
 @Composable
 private fun ScrollableList(modifier: Modifier, content: LazyListScope.() -> Unit) {
     val listState = rememberLazyListState()
-    val areaState = rememberScrollAreaState(listState)
-    ScrollArea(state = areaState, modifier = modifier) {
+    Box(modifier) {
         LazyColumn(
             state = listState,
             // Reserve the scrollbar gutter so rows never sit under the thumb (RTL: 'end' = left).
-            modifier = Modifier.fillMaxSize().padding(end = 14.dp),
+            modifier = Modifier.fillMaxSize().padding(end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             content = content,
         )
-        UnstyledVerticalScrollbar(
-            modifier = Modifier.align(Alignment.TopEnd).fillMaxHeight().width(8.dp),
-        ) {
-            UnstyledThumb(
-                modifier = Modifier.fillMaxWidth().background(BorderC, RoundedCornerShape(100)),
-                thumbVisibility = ThumbVisibility.AlwaysVisible,
-            )
-        }
+        LazyScrollbar(listState)
     }
+}
+
+/**
+ * Accurate, draggable vertical scrollbar driven directly by [LazyListState.layoutInfo].
+ * compose-unstyled's lazy scrollbar mis-estimates long lists, so we compute the thumb ourselves.
+ */
+@Composable
+private fun BoxScope.LazyScrollbar(state: LazyListState) {
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val info = state.layoutInfo
+    val total = info.totalItemsCount
+    val visible = info.visibleItemsInfo
+    if (total == 0 || visible.isEmpty()) return
+
+    val viewportPx = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+    if (viewportPx <= 0f) return
+    val spacingPx = with(density) { 6.dp.toPx() }
+    val avgItemPx = visible.sumOf { it.size }.toFloat() / visible.size + spacingPx
+    val contentPx = avgItemPx * total
+    if (contentPx <= viewportPx) return // everything fits: no scrollbar
+
+    val maxScrollPx = (contentPx - viewportPx).coerceAtLeast(1f)
+    val scrolledPx = state.firstVisibleItemIndex * avgItemPx + state.firstVisibleItemScrollOffset
+    val fraction = (scrolledPx / maxScrollPx).coerceIn(0f, 1f)
+    val minThumbPx = with(density) { 32.dp.toPx() }
+    val thumbPx = (viewportPx * viewportPx / contentPx).coerceIn(minThumbPx, viewportPx)
+    val thumbOffsetPx = (viewportPx - thumbPx) * fraction
+
+    Box(
+        Modifier
+            .align(Alignment.TopEnd)
+            .offset { IntOffset(0, thumbOffsetPx.roundToInt()) }
+            .padding(end = 2.dp)
+            .width(6.dp)
+            .height(with(density) { thumbPx.toDp() })
+            .clip(RoundedCornerShape(100))
+            .background(TextDim)
+            .pointerInput(total, avgItemPx, viewportPx, thumbPx) {
+                detectDragGestures { _, drag ->
+                    val draggable = (viewportPx - thumbPx).coerceAtLeast(1f)
+                    val delta = drag.y / draggable * maxScrollPx
+                    scope.launch { state.scrollBy(delta) }
+                }
+            },
+    )
 }
 
 @Composable
