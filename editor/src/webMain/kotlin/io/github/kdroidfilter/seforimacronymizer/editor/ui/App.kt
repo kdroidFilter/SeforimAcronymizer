@@ -337,15 +337,16 @@ private fun ScrollableList(modifier: Modifier, content: LazyListScope.() -> Unit
     ScrollArea(state = areaState, modifier = modifier) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            // Reserve the scrollbar gutter so rows never sit under the thumb (RTL: 'end' = left).
+            modifier = Modifier.fillMaxSize().padding(end = 14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             content = content,
         )
         UnstyledVerticalScrollbar(
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(10.dp).padding(2.dp),
+            modifier = Modifier.align(Alignment.TopEnd).fillMaxHeight().width(8.dp),
         ) {
             UnstyledThumb(
-                modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(BorderC),
+                modifier = Modifier.fillMaxWidth().background(BorderC, RoundedCornerShape(100)),
                 thumbVisibility = ThumbVisibility.AlwaysVisible,
             )
         }
