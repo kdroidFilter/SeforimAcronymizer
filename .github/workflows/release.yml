@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'data/acronymizer.sql'
+  workflow_dispatch:
 
 permissions:
   contents: write

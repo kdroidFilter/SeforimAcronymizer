@@ -35,7 +35,8 @@ section() { # title, query
   if [ -z "$rows" ]; then
     echo "_none_"
   else
-    printf '%s\n' "$rows" | head -n "$CAP" | sed 's/^/- /'
+    # sed, not head: head exits early and printf then dies of SIGPIPE under pipefail
+    printf '%s\n' "$rows" | sed -n "1,${CAP}s/^/- /p"
     [ "$n" -gt "$CAP" ] && echo "- … (+$((n-CAP)) more, truncated)"
   fi
   echo
