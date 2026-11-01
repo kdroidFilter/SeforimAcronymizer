@@ -52,8 +52,8 @@ mavenPublishing {
 
         licenses {
             license {
-                name = "MIT"
-                url = "https://opensource.org/licenses/MIT"
+                name = "Zayit Public License 1.0"
+                url = "https://github.com/kdroidFilter/SeforimAcronymizer/blob/master/LICENSE"
             }
         }
 
